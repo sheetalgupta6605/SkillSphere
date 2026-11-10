@@ -1,0 +1,26 @@
+# Python
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+
+# Frontend dependencies and builds
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+
+# Private uploads and temporary files
+backend/uploads/
+**/uploads/**
+*.tmp
+*.log
+.DS_Store
+Thumbs.db

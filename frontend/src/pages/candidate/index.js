@@ -1,0 +1,15 @@
+export { CandidateDashboard } from "./Dashboard";
+export { PersonalDetails } from "./PersonalDetails";
+export { Profile } from "./Profile";
+export { Resume } from "./Resume";
+export { OCRResults } from "./OCRResults";
+export { Analysis } from "./Analysis";
+export { JobMatcher } from "./JobMatcher";
+export { SavedJobs } from "./SavedJobs";
+export { Applications } from "./Applications";
+export { Jobs } from "./ExploreJobs";
+export { JobDetail } from "./JobDetails";
+export { ResumeBuilder, LearningCentre, InterviewPrep, SettingsPage } from "./CareerTools";
+export { Notifications } from "./Notifications";
+export { RecentlyViewed } from "./RecentlyViewed";
+export { Messages } from "./Messages";
