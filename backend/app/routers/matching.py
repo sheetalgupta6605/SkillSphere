@@ -8,7 +8,7 @@ from app.database import get_database
 from app.dependencies import require_role
 from app.routers.jobs import active_jobs_query, attach_company_details
 from app.services.resume_matching import analyze_resume_match
-
+from app.services.resume_matching import analyze_jobs_with_gemini
 
 router = APIRouter(prefix="/api/matching", tags=["Resume Analysis"])
 job_match_router = APIRouter(prefix="/api/job-match", tags=["Resume Analysis"])
@@ -132,3 +132,78 @@ async def delete_analysis(analysis_id: str, user=Depends(require_role("candidate
     if not result.deleted_count:
         raise HTTPException(status_code=404, detail="Analysis not found")
     return {"message": "Analysis deleted"}
+
+
+
+@router.get("/job-matches")
+async def get_ai_job_matches(
+    user=Depends(require_role("candidate")),
+    db=Depends(get_database)
+):
+    candidate_id = str(user["_id"])
+
+    resume = await db.resumes.find_one(
+        {
+            "candidate_id": candidate_id,
+            "status": "completed"
+        },
+        sort=[("processed_at", -1), ("created_at", -1)]
+    )
+
+    if not resume:
+        raise HTTPException(
+            status_code=404,
+            detail="Please upload a completed resume before matching jobs."
+        )
+
+    jobs = await db.jobs.find(
+        active_jobs_query()
+    ).sort("created_at", -1).to_list(length=10)
+
+    if not jobs:
+        return {"items": [], "message": "No published jobs found."}
+
+    try:
+        matches = await analyze_jobs_with_gemini(resume, jobs)
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc)
+        ) from exc
+
+    job_map = {
+        str(job["_id"]): job for job in jobs
+    }
+
+    items = []
+
+    for match in matches:
+        job = job_map.get(match["job_id"])
+
+        if not job:
+            continue
+
+        await attach_company_details(db, [job])
+
+        items.append({
+            "id": match["job_id"],
+            "title": job.get("title"),
+            "company_name": job.get("company_name"),
+            "location": job.get("location"),
+            "job_type": job.get("job_type"),
+            "work_mode": job.get("work_mode"),
+            "experience_range": job.get("experience_range"),
+            **match
+        })
+
+    items.sort(
+        key=lambda item: item["percentage"],
+        reverse=True
+    )
+
+    return {
+        "items": items,
+        "resume_id": str(resume["_id"]),
+        "total": len(items)
+    }

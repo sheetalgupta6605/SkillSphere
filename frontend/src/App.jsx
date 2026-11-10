@@ -53,22 +53,44 @@ function ComingSoonPage({ page, onNavigate }) {
 function AppContent() {
   const { user, setUser, loading: authLoading, logout: endSession } = useAuth();
   const [theme, setTheme] = useState(() => localStorage.getItem("skillsphere_theme") || "light");
-  const [page, setPage] = useState(() => pageFromPath(window.location.pathname));
-  const historyRef = useRef([]);
-  const pageRef = useRef(page);
+  // const [page, setPage] = useState(() => pageFromPath(window.location.pathname));
+  // const historyRef = useRef([]);
+  // const pageRef = useRef(page);
+  // const routerNavigate = useRouterNavigate();
+  // const location = useLocation();
+  // const navigationType = useNavigationType();
+
   const routerNavigate = useRouterNavigate();
-  const location = useLocation();
-  const navigationType = useNavigationType();
+const location = useLocation();
+const navigationType = useNavigationType();
+
+const page = pageFromPath(location.pathname);
+const historyRef = useRef([]);
+const pageRef = useRef(page);
+
+  // useEffect(() => {
+  //   const nextPage = pageFromPath(location.pathname);
+  //   if (navigationType === "POP") {
+  //     if (historyRef.current.at(-1) === nextPage) historyRef.current.pop();
+  //     else if (pageRef.current !== nextPage) historyRef.current.push(pageRef.current);
+  //   }
+  //   pageRef.current = nextPage;
+  //   setPage(nextPage);
+  // }, [location.pathname, location.key, navigationType]);
 
   useEffect(() => {
-    const nextPage = pageFromPath(location.pathname);
-    if (navigationType === "POP") {
-      if (historyRef.current.at(-1) === nextPage) historyRef.current.pop();
-      else if (pageRef.current !== nextPage) historyRef.current.push(pageRef.current);
+  const nextPage = pageFromPath(location.pathname);
+
+  if (navigationType === "POP") {
+    if (historyRef.current.at(-1) === nextPage) {
+      historyRef.current.pop();
+    } else if (pageRef.current !== nextPage) {
+      historyRef.current.push(pageRef.current);
     }
-    pageRef.current = nextPage;
-    setPage(nextPage);
-  }, [location.pathname, location.key, navigationType]);
+  }
+
+  pageRef.current = nextPage;
+}, [location.pathname, location.key, navigationType]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -86,15 +108,31 @@ function AppContent() {
     return `/${nextPage}`;
   }
 
+  // function navigate(nextPage, role = user?.role, replace = false, recordHistory = true) {
+  //   const target = pathForPage(nextPage, role);
+  //   if (nextPage === page && location.pathname === target) return;
+  //   if (!replace && recordHistory && pageRef.current !== nextPage) historyRef.current.push(pageRef.current);
+  //   pageRef.current = nextPage;
+  //   setPage(nextPage);
+  //   routerNavigate(target, { replace });
+  //   window.scrollTo({ top: 0, behavior: "smooth" });
+  // }
+
   function navigate(nextPage, role = user?.role, replace = false, recordHistory = true) {
-    const target = pathForPage(nextPage, role);
-    if (nextPage === page && location.pathname === target) return;
-    if (!replace && recordHistory && pageRef.current !== nextPage) historyRef.current.push(pageRef.current);
-    pageRef.current = nextPage;
-    setPage(nextPage);
-    routerNavigate(target, { replace });
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  const target = pathForPage(nextPage, role);
+
+  if (nextPage === page && location.pathname === target) return;
+
+  if (!replace && recordHistory && pageRef.current !== nextPage) {
+    historyRef.current.push(pageRef.current);
   }
+
+  pageRef.current = nextPage;
+
+  routerNavigate(target, { replace });
+
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -118,13 +156,21 @@ function AppContent() {
     navigate(returnPage, signedInUser.role);
   }
 
-  async function logout() {
-    await endSession();
-    historyRef.current = [];
-    pageRef.current = "home";
-    setPage("home");
-    routerNavigate("/", { replace: true });
-  }
+  // async function logout() {
+  //   await endSession();
+  //   historyRef.current = [];
+  //   pageRef.current = "home";
+  //   setPage("home");
+  //   routerNavigate("/", { replace: true });
+  // }
+async function logout() {
+  await endSession();
+
+  historyRef.current = [];
+  pageRef.current = "home";
+
+  routerNavigate("/", { replace: true });
+}
 
   function content() {
     if (page === "login") return <Login onSuccess={(signedInUser) => loadSignedInUser(signedInUser)} onNavigate={navigate} />;
@@ -145,7 +191,21 @@ function AppContent() {
     if (comingSoonTitles[page]) return <ComingSoonPage page={page} onNavigate={navigate} />;
     if (page === "jobs" && user?.role === "recruiter") return <RecruiterJobs />;
     if (page === "jobs") return <Jobs user={user} onNavigate={navigate} />;
-    if (page.startsWith("job-")) return <JobDetail jobId={page.slice(4)} user={user} onNavigate={navigate} />;
+
+    // if (page.startsWith("job-")) return <JobDetail jobId={page.slice(4)} user={user} onNavigate={navigate} />;
+
+    if (page === "job-matcher") {
+  return <JobMatcher onNavigate={navigate} />;
+}
+
+if (page.startsWith("job-")) {
+  return <JobDetail
+    jobId={page.slice(4)}
+    user={user}
+    onNavigate={navigate}
+  />;
+}
+
     if (isApplyPage && user?.role === "candidate") return <ApplyJobPage jobId={page.slice("apply-".length)} onNavigate={navigate} />;
     if (isApplicationDetail && user?.role === "candidate") return <ApplicationDetailPage applicationId={page.slice("application-".length)} onNavigate={navigate} />;
     if (page === "about") return <About />;

@@ -80,7 +80,7 @@ export function DashboardLayout({ user, theme, setTheme, onNavigate, onLogout, a
     </aside>
     <main className="dashboard-main">
       <div className="dashboard-top">
-        <button className="mobile-sidebar-toggle" onClick={toggleNavigation} aria-label={mobileOpen ? "Close navigation" : collapsed ? "Expand sidebar" : "Collapse sidebar"} title={collapsed ? "Expand sidebar" : "Toggle navigation"}>{mobileOpen ? "×" : "☰"}</button>
+        {/* <button className="mobile-sidebar-toggle" onClick={toggleNavigation} aria-label={mobileOpen ? "Close navigation" : collapsed ? "Expand sidebar" : "Collapse sidebar"} title={collapsed ? "Expand sidebar" : "Toggle navigation"}>{mobileOpen ? "×" : "☰"}</button> */}
         <span className="eyebrow dashboard-page-title">{activeLabel}</span>
         <div className="top-actions">
           <ThemeButton theme={theme} setTheme={setTheme}/>

@@ -91,34 +91,97 @@ async def analytics(user: dict = Depends(require_role("admin")), db=Depends(get_
     return await dashboard(user, db)
 
 
+
+
 @router.get("/reports")
 async def reports(_: dict = Depends(require_role("admin")), db=Depends(get_database)):
     now = datetime.now(timezone.utc)
+
     month_keys = []
     for offset in reversed(range(6)):
         year, month = now.year, now.month - offset
+
         while month <= 0:
             year -= 1
             month += 12
+
         month_keys.append((year, month))
+
     start_year, start_month = month_keys[0]
     start = datetime(start_year, start_month, 1, tzinfo=timezone.utc)
-    collections = {"users": db.users, "jobs": db.jobs, "applications": db.applications}
+
+    collections = {
+        "users": db.users,
+        "jobs": db.jobs,
+        "applications": db.applications
+    }
+
     trends = {}
+
     for name, collection in collections.items():
         counts = {(year, month): 0 for year, month in month_keys}
-        grouped = await collection.aggregate([{"$match": {"created_at": {"$gte": start}}}, {"$group": {"_id": {"year": {"$year": "$created_at"}, "month": {"$month": "$created_at"}}, "count": {"$sum": 1}}}]).to_list(length=12)
+
+        cursor = await collection.aggregate([
+            {"$match": {"created_at": {"$gte": start}}},
+            {
+                "$group": {
+                    "_id": {
+                        "year": {"$year": "$created_at"},
+                        "month": {"$month": "$created_at"}
+                    },
+                    "count": {"$sum": 1}
+                }
+            }
+        ])
+
+        grouped = await cursor.to_list(length=12)
+
         for record in grouped:
-            key = (record["_id"]["year"], record["_id"]["month"])
+            key = (
+                record["_id"]["year"],
+                record["_id"]["month"]
+            )
+
             if key in counts:
                 counts[key] = record["count"]
-        trends[name] = [{"month": f"{month_abbr[month]} {str(year)[-2:]}", "count": counts[(year, month)]} for year, month in month_keys]
+
+        trends[name] = [
+            {
+                "month": f"{month_abbr[month]} {str(year)[-2:]}",
+                "count": counts[(year, month)]
+            }
+            for year, month in month_keys
+        ]
+
     jobs_total = await db.jobs.count_documents({})
-    grouped_statuses = await db.jobs.aggregate([{"$group": {"_id": "$status", "count": {"$sum": 1}}}]).to_list(length=20)
-    job_statuses = {item.get("_id") or "unknown": item["count"] for item in grouped_statuses}
+
+    status_cursor = await db.jobs.aggregate([
+        {
+            "$group": {
+                "_id": "$status",
+                "count": {"$sum": 1}
+            }
+        }
+    ])
+
+    grouped_statuses = await status_cursor.to_list(length=20)
+
+    job_statuses = {
+        item.get("_id") or "unknown": item["count"]
+        for item in grouped_statuses
+    }
+
     return {
-        "totals": {"users": await db.users.count_documents({}), "candidates": await db.users.count_documents({"role": "candidate"}), "recruiters": await db.users.count_documents({"role": "recruiter"}), "companies": await db.companies.count_documents({}), "jobs": jobs_total, "applications": await db.applications.count_documents({})},
-        "job_statuses": job_statuses, "trends": trends,
+        "totals": {
+            "users": await db.users.count_documents({}),
+            "candidates": await db.users.count_documents({"role": "candidate"}),
+            "recruiters": await db.users.count_documents({"role": "recruiter"}),
+            "companies": await db.companies.count_documents({}),
+            "jobs": jobs_total,
+            "applications": await db.applications.count_documents({})
+        },
+        "job_statuses": job_statuses,
+        "trends": trends
     }
 
 

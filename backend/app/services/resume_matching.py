@@ -1,5 +1,8 @@
 import re
+import asyncio
+import json
 
+from google import genai
 from app.services.resume import normalize_skill
 
 
@@ -195,3 +198,125 @@ def analyze_resume_match(resume: dict, job: dict) -> dict:
         "explanation": explanation,
         "disclaimer": "This score compares extracted resume evidence with listed job requirements. It does not predict hiring outcomes.",
     }
+
+
+
+async def analyze_jobs_with_gemini(resume, jobs):
+    from app.config import settings
+
+    if not settings.gemini_api_key:
+        raise ValueError(
+            "Gemini API key is missing. Add GEMINI_API_KEY to backend/.env."
+        )
+
+    extracted = resume.get("extracted_data") or {}
+    resume_text = str(extracted.get("raw_text") or "").strip()
+
+    if not resume_text:
+        raise ValueError("Resume has no extracted text.")
+
+    if not jobs:
+        return []
+
+    job_data = []
+
+    for job in jobs:
+        job_data.append({
+            "job_id": str(job["_id"]),
+            "title": job.get("title", ""),
+            "company": job.get("company_name", ""),
+            "description": job.get("description", ""),
+            "required_skills": job.get("required_skills", []),
+            "preferred_skills": job.get("preferred_skills", []),
+            "requirements": job.get("requirements", []),
+            "education_requirements": job.get("education_requirements", []),
+            "experience_range": job.get("experience_range", ""),
+            "location": job.get("location", ""),
+            "job_type": job.get("job_type", ""),
+            "work_mode": job.get("work_mode", ""),
+        })
+
+    prompt = f"""
+You are an AI job matching assistant.
+
+Compare the candidate resume with each job.
+
+CANDIDATE RESUME:
+{resume_text[:18000]}
+
+JOBS:
+{json.dumps(job_data, ensure_ascii=False, default=str)}
+
+Return ONLY valid JSON in this format:
+
+{{
+  "matches": [
+    {{
+      "job_id": "actual job id",
+      "percentage": 80,
+      "summary": "Short explanation of the match",
+      "matched_skills": ["Python"],
+      "missing_skills": ["Docker"],
+      "strengths": ["Relevant project experience"],
+      "improvements": ["Learn Docker"]
+    }}
+  ]
+}}
+
+Rules:
+- Return one result for every supplied job.
+- Use the exact job_id supplied.
+- Percentage must be an integer from 0 to 100.
+- Base scores on actual evidence in the resume.
+- Never invent candidate skills, education or experience.
+- Consider required skills, preferred skills, education and experience.
+- Do not treat missing resume evidence as proof that the candidate lacks a skill.
+- Do not predict hiring or selection.
+"""
+
+    def generate():
+        client = genai.Client(api_key=settings.gemini_api_key)
+
+        return client.models.generate_content(
+            model=settings.gemini_model,
+            contents=prompt,
+            config={
+                "response_mime_type": "application/json"
+            },
+        )
+
+    try:
+        response = await asyncio.to_thread(generate)
+        data = json.loads(response.text)
+        results = data.get("matches", [])
+
+        valid_ids = {str(job["_id"]) for job in jobs}
+        cleaned_results = []
+
+        for item in results:
+            job_id = str(item.get("job_id", ""))
+
+            if job_id not in valid_ids:
+                continue
+
+            percentage = item.get("percentage")
+
+            if not isinstance(percentage, (int, float)):
+                continue
+
+            cleaned_results.append({
+                "job_id": job_id,
+                "percentage": max(0, min(100, round(percentage))),
+                "summary": str(item.get("summary", "")),
+                "matched_skills": item.get("matched_skills", []),
+                "missing_skills": item.get("missing_skills", []),
+                "strengths": item.get("strengths", []),
+                "improvements": item.get("improvements", []),
+            })
+
+        return cleaned_results
+
+    except Exception as exc:
+        raise ValueError(
+            f"Gemini job matching failed: {str(exc)}"
+        ) from exc
