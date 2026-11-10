@@ -50,15 +50,227 @@ export function ApplyJobPage({ jobId, onNavigate }) {
   </section>;
 }
 
+
 export function ApplicationDetailPage({ applicationId, onNavigate }) {
-  const [item, setItem] = useState(null); const [error, setError] = useState("");
-  useEffect(() => { api(`/api/applications/${applicationId}`).then(setItem).catch(err => setError(err.message)); }, [applicationId]);
-  if (error) return <section className="dashboard-page"><div className="error-box">{error}</div><button className="secondary-button" onClick={() => onNavigate("applications")}>Back to My Applications</button></section>;
-  if (!item) return <section className="dashboard-page"><p className="loading">Loading application details…</p></section>;
-  const history = [...(item.status_history || [])].sort((a, b) => new Date(a.at || a.created_at || 0) - new Date(b.at || b.created_at || 0));
-  return <section className="dashboard-page candidate-form-page"><button className="back-link" onClick={() => onNavigate("applications")}>← Back to My Applications</button><span className="eyebrow">Application details</span><h1>{item.job_title || item.job_snapshot?.title || "Application"}</h1><p className="muted">{item.company_name || item.job_snapshot?.company_name} · Applied {item.created_at ? new Date(item.created_at).toLocaleString() : "—"}</p>
-    <div className="dashboard-card"><h2>Job information</h2><p>{item.job?.title} · {item.job?.location} · {item.job?.job_type}</p>{item.job?.description && <p>{item.job.description}</p>}{item.job?.company_description && <p>{item.job.company_description}</p>}{item.job?.website && <a href={item.job.website} target="_blank" rel="noreferrer">Company website ↗</a>}</div>
-    <div className="dashboard-card"><h2>Submitted materials</h2><p><strong>Resume:</strong> {item.resume_name || "Resume"}</p><p><strong>Cover letter:</strong></p><p className="review-text">{item.cover_letter || "No cover letter submitted."}</p>{Object.entries(item.screening_answers || {}).map(([question, answer]) => <p key={question}><strong>{question}</strong><br/>{answer}</p>)}</div>
-    <div className="dashboard-card"><h2>Status: {label(item.status)}</h2>{item.resume_analysis_id && item.ai_match_score_snapshot != null && <p>Saved AI match score: <strong>{item.ai_match_score_snapshot}%</strong> · <button className="text-button" onClick={() => onNavigate(`analysis-result-${item.resume_analysis_id}`)}>Open analysis</button></p>}<ol className="application-status-history">{history.map((entry, index) => <li key={`${entry.at || index}-${index}`}><span className="timeline-dot"/><div><strong>{label(entry.new_status || entry.status)}</strong><p className="muted">{entry.at || entry.created_at ? new Date(entry.at || entry.created_at).toLocaleString() : "Date unavailable"}{entry.actor_role ? ` · ${entry.actor_role}` : ""}</p></div></li>)}</ol>{!history.length && <p className="muted">No saved status history is available.</p>}</div>
-  </section>;
+  const [item, setItem] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let live = true;
+
+    api(`/api/applications/${applicationId}`)
+      .then(data => {
+        if (live) setItem(data);
+      })
+      .catch(err => {
+        if (live) setError(err.message);
+      });
+
+    return () => {
+      live = false;
+    };
+  }, [applicationId]);
+
+  if (error) {
+    return (
+      <section className="dashboard-page">
+        <div className="error-box">{error}</div>
+        <button className="secondary-button" onClick={() => onNavigate("applications")}>
+          Back to My Applications
+        </button>
+      </section>
+    );
+  }
+
+  if (!item) {
+    return (
+      <section className="dashboard-page">
+        <p className="loading">Loading application details…</p>
+      </section>
+    );
+  }
+
+  const history = [...(item.status_history || [])].sort(
+    (a, b) =>
+      new Date(a.at || a.created_at || 0) -
+      new Date(b.at || b.created_at || 0)
+  );
+
+  const interview = item.interview;
+
+  return (
+    <section className="dashboard-page candidate-form-page">
+      <button className="back-link" onClick={() => onNavigate("applications")}>
+        ← Back to My Applications
+      </button>
+
+      <span className="eyebrow">Application details</span>
+
+      <h1>{item.job_title || item.job_snapshot?.title || "Application"}</h1>
+
+      <p className="muted">
+        {item.company_name || item.job_snapshot?.company_name} · Applied{" "}
+        {item.created_at ? new Date(item.created_at).toLocaleString() : "—"}
+      </p>
+
+      <div className="dashboard-card">
+        <h2>Job information</h2>
+
+        <p>
+          {item.job?.title} · {item.job?.location} · {item.job?.job_type}
+        </p>
+
+        {item.job?.description && <p>{item.job.description}</p>}
+
+        {item.job?.company_description && (
+          <p>{item.job.company_description}</p>
+        )}
+
+        {item.job?.website && (
+          <a href={item.job.website} target="_blank" rel="noreferrer">
+            Company website ↗
+          </a>
+        )}
+      </div>
+
+      <div className="dashboard-card">
+        <h2>Submitted materials</h2>
+
+        <p>
+          <strong>Resume:</strong> {item.resume_name || "Resume"}
+        </p>
+
+        <p><strong>Cover letter:</strong></p>
+
+        <p className="review-text">
+          {item.cover_letter || "No cover letter submitted."}
+        </p>
+
+        {Object.entries(item.screening_answers || {}).map(
+          ([question, answer]) => (
+            <p key={question}>
+              <strong>{question}</strong>
+              <br />
+              {answer}
+            </p>
+          )
+        )}
+      </div>
+
+      {/* Interview details */}
+      {interview && (
+        <div className="dashboard-card">
+          <span className="eyebrow">Recruiter scheduled interview</span>
+
+          <h2>Interview Details</h2>
+
+          <p>
+            <strong>Date:</strong>{" "}
+            {interview.scheduled_at
+              ? new Date(interview.scheduled_at).toLocaleDateString(undefined, {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })
+              : "Not provided"}
+          </p>
+
+          <p>
+            <strong>Time:</strong>{" "}
+            {interview.scheduled_at
+              ? new Date(interview.scheduled_at).toLocaleTimeString(undefined, {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: true,
+                })
+              : "Not provided"}
+          </p>
+
+          <p>
+            <strong>Interview type:</strong>{" "}
+            {interview.interview_type === "online"
+              ? "Online"
+              : interview.interview_type === "in_person"
+                ? "In person"
+                : "Not specified"}
+          </p>
+
+          {interview.interview_type === "online" &&
+            interview.meeting_link && (
+              <p>
+                <strong>Meeting link:</strong>{" "}
+                <a
+                  href={interview.meeting_link}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Join interview ↗
+                </a>
+              </p>
+            )}
+
+          {interview.interview_type === "in_person" &&
+            interview.location && (
+              <p>
+                <strong>Location:</strong> {interview.location}
+              </p>
+            )}
+
+          {interview.instructions && (
+            <div>
+              <p><strong>Instructions:</strong></p>
+              <p className="review-text">{interview.instructions}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="dashboard-card">
+        <h2>Status: {label(item.status)}</h2>
+
+        {item.resume_analysis_id &&
+          item.ai_match_score_snapshot != null && (
+            <p>
+              Saved AI match score:{" "}
+              <strong>{item.ai_match_score_snapshot}%</strong> ·{" "}
+              <button
+                className="text-button"
+                onClick={() =>
+                  onNavigate(`analysis-result-${item.resume_analysis_id}`)
+                }
+              >
+                Open analysis
+              </button>
+            </p>
+          )}
+
+        <ol className="application-status-history">
+          {history.map((entry, index) => (
+            <li key={`${entry.at || index}-${index}`}>
+              <span className="timeline-dot" />
+
+              <div>
+                <strong>
+                  {label(entry.new_status || entry.status)}
+                </strong>
+
+                <p className="muted">
+                  {entry.at || entry.created_at
+                    ? new Date(entry.at || entry.created_at).toLocaleString()
+                    : "Date unavailable"}
+                  {entry.actor_role ? ` · ${entry.actor_role}` : ""}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ol>
+
+        {!history.length && (
+          <p className="muted">
+            No saved status history is available.
+          </p>
+        )}
+      </div>
+    </section>
+  );
 }

@@ -9,7 +9,8 @@ const pageNames = {
   "admin-users": "User management", "admin-jobs": "Job approvals", "admin-analytics": "Reports",
   "admin-candidates": "Candidates", "admin-recruiters": "Recruiters",
   "admin-companies": "Companies", "admin-applications": "Applications",
-  "admin-analyses": "Resume analyses", "admin-reports": "Reports", "resume-search": "Resume search",
+  "admin-analyses": "Resume analyses", "admin-reports": "Reports", 
+  // "resume-search": "Resume search",
 };
 
 export function PageChrome({ page, user, onBack, onNavigate }) {

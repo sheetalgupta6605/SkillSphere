@@ -10,7 +10,8 @@ const candidateLinks = [
 const recruiterLinks = [
   ["dashboard", "Dashboard", "⌂"], ["company", "Company Profile", "◇"], ["recruiter-profile", "Recruiter Profile", "♙"],
   ["jobs", "Manage Jobs", "▣"], ["post-job", "Post a Job", "＋"],
-  ["applicants", "Applicants", "◎"], ["resume-search", "Resume Search", "⌕"],
+  ["applicants", "Applicants", "◎"],
+  //  ["resume-search", "Resume Search", "⌕"],
   ["notifications", "Notifications", "♧"],
 ];
 const adminLinks = [

@@ -880,3 +880,38 @@ input[type="number"]::-webkit-outer-spin-button { opacity: 1; }
 
 /* Force correct caret colour so cursor is always visible */
 input, textarea { caret-color: var(--_input-text); }
+
+
+
+.interview-notification-details {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 12px;
+  background: var(--surface-secondary, #f8fafc);
+}
+
+.interview-notification-details h3 {
+  margin: 0 0 12px;
+}
+
+.interview-notification-details p {
+  margin: 8px 0;
+  line-height: 1.6;
+}
+
+.interview-notification-details a {
+  color: var(--primary-color, #6366f1);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.interview-notification-details a:hover {
+  text-decoration: underline;
+}
+
+.interview-instructions {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color, #e5e7eb);
+}
