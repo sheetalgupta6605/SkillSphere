@@ -189,8 +189,11 @@ async function logout() {
     const requiredRole = isAnalysisResult || isApplyPage || isApplicationDetail ? "candidate" : isRecruiterJob || isRecruiterApplication || isRecruiterAnalysis ? "recruiter" : pathRole && (rolePages[pathRole]?.includes(page) || pathRole === "candidate" && page.startsWith("job-")) ? pathRole : !pathRole && page !== "jobs" ? Object.entries(rolePages).find(([, pages]) => pages.includes(page))?.[0] : undefined;
     if (user && requiredRole && user.role !== requiredRole) return <UnauthorizedPage onNavigate={navigate} />;
     if (comingSoonTitles[page]) return <ComingSoonPage page={page} onNavigate={navigate} />;
-    if (page === "jobs" && user?.role === "recruiter") return <RecruiterJobs />;
-    if (page === "jobs") return <Jobs user={user} onNavigate={navigate} />;
+  if (page === "jobs" && user?.role === "recruiter") {
+  return <RecruiterJobs onNavigate={navigate} />;
+}
+
+if (page === "jobs") return <Jobs user={user} onNavigate={navigate} />;
 
     // if (page.startsWith("job-")) return <JobDetail jobId={page.slice(4)} user={user} onNavigate={navigate} />;
 
@@ -231,7 +234,9 @@ if (page.startsWith("job-")) {
     if (page === "recruiter-profile" && user?.role === "recruiter") return <RecruiterProfile />;
     if (page === "applicants" && user?.role === "recruiter") return <Applicants onNavigate={navigate} />;
     if (page === "resume-search" && user?.role === "recruiter") return <ResumeSearch />;
+
     if (isRecruiterJob && user?.role === "recruiter") return <ManageJobPage jobId={page.slice("recruiter-job-".length)} onNavigate={navigate} />;
+    
     if (isRecruiterApplication && user?.role === "recruiter") return <ApplicantDetails applicationId={page.slice("recruiter-app-".length)} onNavigate={navigate} />;
     if (isRecruiterAnalysis && user?.role === "recruiter") return <RecruiterAnalysisDetails analysisId={page.slice("recruiter-analysis-".length)} onNavigate={navigate} />;
     if (page === "recruiter-analytics" && user?.role === "recruiter") return <RecruiterDashboard user={user} onNavigate={navigate} />;

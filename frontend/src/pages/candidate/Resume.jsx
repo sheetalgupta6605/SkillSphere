@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { API_URL, api } from "../../lib/api";
+import { API_URL, api, formatApiError } from "../../lib/api";
 import { uploadWithProgress } from "../../lib/upload";
 import { ConfirmDialog } from "../../components/ui";
 
@@ -8,7 +8,7 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024;
 async function downloadFile(path, filename) {
   const token = localStorage.getItem("skillsphere_token") || sessionStorage.getItem("skillsphere_token");
   const response = await fetch(`${API_URL}${path}`, { headers: { Authorization: `Bearer ${token}` } });
-  if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.detail || "Download failed"); }
+  if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(formatApiError(body)); }
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -21,7 +21,7 @@ async function downloadFile(path, filename) {
 async function getPdfUrl(path) {
   const token = localStorage.getItem("skillsphere_token") || sessionStorage.getItem("skillsphere_token");
   const response = await fetch(`${API_URL}${path}`, { headers: { Authorization: `Bearer ${token}` } });
-  if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.detail || "Preview failed"); }
+  if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(formatApiError(body)); }
   return URL.createObjectURL(await response.blob());
 }
 

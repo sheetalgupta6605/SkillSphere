@@ -336,7 +336,7 @@ async def applicant_resume(application_id: str, preview: bool = False, user=Depe
     application = await owned_application(application_id, user, db)
     resume_id = application.get("resume_id", "")
     if not ObjectId.is_valid(resume_id):
-        raise HTTPException(status_code=404, detail="Submitted resume is unavailable")
+        raise HTTPException(status_code=404, detail="Candidate did not submit a resume")
     resume = await db.resumes.find_one({"_id": ObjectId(resume_id), "candidate_id": application.get("candidate_id")})
     if not resume:
         raise HTTPException(status_code=404, detail="Submitted resume is unavailable")
@@ -344,7 +344,8 @@ async def applicant_resume(application_id: str, preview: bool = False, user=Depe
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Resume file is unavailable")
     disposition = "inline" if preview else "attachment"
-    return FileResponse(path, filename="candidate-resume.pdf", media_type="application/pdf", headers={"Content-Disposition": f'{disposition}; filename="candidate-resume.pdf"'})
+    download_filename = resume.get("original_name") or "candidate-resume.pdf"
+    return FileResponse(path, filename=download_filename, media_type="application/pdf", headers={"Content-Disposition": f'{disposition}; filename="{download_filename}"'})
 
 
 @router.put("/applications/{application_id}/status")
@@ -357,24 +358,66 @@ async def update_application_status(application_id: str, payload: ApplicationSta
     now = datetime.now(timezone.utc)
     new_status = payload.status
     if new_status != old_status:
-        result = await db.applications.update_one({"_id": application["_id"], "status": old_status}, {"$set": {"status": new_status, "updated_at": now}, "$push": {"status_history": {"previous_status": old_status, "new_status": new_status, "status": new_status, "at": now, "actor_id": str(user["_id"]), "actor_role": "recruiter", "actor_name": user.get("full_name")}}})
+        update_doc = {"status": new_status, "updated_at": now}
+        push_doc = {
+            "status_history": {
+                "previous_status": old_status,
+                "new_status": new_status,
+                "status": new_status,
+                "at": now,
+                "actor_id": str(user["_id"]),
+                "actor_role": "recruiter",
+                "actor_name": user.get("full_name")
+            }
+        }
+        # If an application becomes Rejected after an interview is scheduled,
+        # prevent further scheduling and cancel the existing interview
+        existing_interview = application.get("interview")
+        interview_cancelled = False
+        if new_status == "rejected" and existing_interview and existing_interview.get("status") != "cancelled":
+            update_doc["interview.status"] = "cancelled"
+            update_doc["interview.cancelled_at"] = now.isoformat()
+            update_doc["interview.cancellation_reason"] = "Application rejected"
+            push_doc["status_history"]["interview_cancelled"] = True
+            interview_cancelled = True
+
+        result = await db.applications.update_one(
+            {"_id": application["_id"], "status": old_status},
+            {"$set": update_doc, "$push": push_doc}
+        )
         if not result.modified_count:
             raise HTTPException(status_code=409, detail="Application status changed. Refresh and try again.")
-    job = await db.jobs.find_one({"_id": ObjectId(application["job_id"])})
-    if new_status != old_status:
-        await create_notification(db, application["candidate_id"], "Application status updated", f"Your application for {job.get('title', 'a role') if job else 'a role'} is now {new_status.replace('_', ' ')}.", "application_update", application_id, "/applications")
+
+        job = await db.jobs.find_one({"_id": ObjectId(application["job_id"])}) if ObjectId.is_valid(application.get("job_id", "")) else None
+        job_title = job.get('title', 'a role') if job else 'a role'
+        await create_notification(db, application["candidate_id"], "Application status updated", f"Your application for {job_title} is now {new_status.replace('_', ' ')}.", "application_update", application_id, "/applications")
+        if interview_cancelled:
+            await create_notification(db, application["candidate_id"], "Interview cancelled", f"Your scheduled interview for {job_title} was cancelled because the application was rejected.", "interview_cancelled", application_id, "/applications")
+
     return {"message": "Application status updated", "status": new_status}
 
 
 @router.post("/applicants/{application_id}/interview", status_code=201)
 async def schedule_interview(application_id: str, payload: InterviewSchedule, user=Depends(require_role("recruiter")), db=Depends(get_database)):
     application = await owned_application(application_id, user, db)
-    if application.get("status") in {"withdrawn", "rejected", "accepted", "selected"}:
-        raise HTTPException(status_code=409, detail="An interview cannot be scheduled for this application status.")
+    current_status = application.get("status", "submitted")
+    if current_status == "rejected":
+        raise HTTPException(status_code=400, detail="Cannot schedule an interview for a rejected application.")
+    ELIGIBLE_INTERVIEW_STATUSES = {"under_review", "shortlisted", "interview_scheduled"}
+    if current_status not in ELIGIBLE_INTERVIEW_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Interviews can only be scheduled for applications that are Under Review or Shortlisted (current status: {current_status.replace('_', ' ')})."
+        )
     interview = payload.model_dump(mode="json")
-    interview.update({"scheduled_by": str(user["_id"]), "updated_at": datetime.now(timezone.utc).isoformat()})
     now = datetime.now(timezone.utc)
-    old_status = application.get("status", "submitted")
+    interview.update({
+        "status": "scheduled",
+        "scheduled_by": str(user["_id"]),
+        "scheduled_at_timestamp": now.isoformat(),
+        "updated_at": now.isoformat()
+    })
+    old_status = current_status
     updates = {"interview": interview, "updated_at": now}
     update = {"$set": updates}
     if old_status != "interview_scheduled":

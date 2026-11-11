@@ -122,14 +122,20 @@ export function JobMatcher({ onNavigate }) {
               <div>
                 <strong>Matched skills</strong>
                 <p>
-                  {job.matched_skills?.join(", ") || "No matching skills found"}
+                  {(job.matched_skills || [])
+                    .map((s) => (typeof s === "object" && s !== null ? (s.name || s.skill || "") : String(s || "")).trim())
+                    .filter(Boolean)
+                    .join(", ") || "No matching skills found"}
                 </p>
               </div>
 
               <div>
                 <strong>Missing skills</strong>
                 <p>
-                  {job.missing_skills?.join(", ") || "No specific gaps identified"}
+                  {(job.missing_skills || [])
+                    .map((s) => (typeof s === "object" && s !== null ? (s.name || s.skill || "") : String(s || "")).trim())
+                    .filter(Boolean)
+                    .join(", ") || "No specific gaps identified"}
                 </p>
               </div>
 
@@ -137,7 +143,9 @@ export function JobMatcher({ onNavigate }) {
                 <strong>Improvement suggestions</strong>
                 <ul>
                   {(job.improvements || []).map((item, index) => (
-                    <li key={index}>{item}</li>
+                    <li key={index}>
+                      {typeof item === "object" && item !== null ? (item.text || item.message || JSON.stringify(item)) : String(item)}
+                    </li>
                   ))}
                 </ul>
               </div>

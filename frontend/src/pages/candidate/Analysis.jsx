@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../lib/api";
+import { ATS_MINIMUM, meetsAtsMinimum } from "../../lib/ats";
 import { ConfirmDialog, LoadingIndicator, StatusMessage } from "../../components/ui";
 
 function ScoreBar({ label, score, weight }) {
@@ -7,7 +8,25 @@ function ScoreBar({ label, score, weight }) {
 }
 
 function SkillGroup({ title, items, tone, empty }) {
-  return <section className="analysis-result-section"><h2>{title}</h2>{items?.length ? <div className="tag-row">{items.map((skill, index) => <span className={`analysis-skill ${tone}`} key={`${skill}-${index}`}>{skill}</span>)}</div> : <p className="muted">{empty}</p>}</section>;
+  return (
+    <section className="analysis-result-section">
+      <h2>{title}</h2>
+      {items?.length ? (
+        <div className="tag-row">
+          {items.map((skill, index) => {
+            const text = typeof skill === "object" && skill !== null ? (skill.name || skill.skill || JSON.stringify(skill)) : String(skill);
+            return (
+              <span className={`analysis-skill ${tone}`} key={`${text}-${index}`}>
+                {text}
+              </span>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="muted">{empty}</p>
+      )}
+    </section>
+  );
 }
 
 export function Analysis({ analysisId, onNavigate }) {
@@ -49,6 +68,7 @@ export function Analysis({ analysisId, onNavigate }) {
     return <section className="dashboard-page candidate-form-page analysis-page">
       <button className="back-link" onClick={() => onNavigate("analysis")}>← Back to analysis history</button>
       <span className="eyebrow">Saved resume-to-job comparison</span><h1>{result.job_snapshot?.title || "Job analysis"}</h1><p className="muted page-intro">{[result.job_snapshot?.company_name, result.job_snapshot?.location, result.resume_name].filter(Boolean).join(" · ")}</p>
+      <span className={`status-badge ${meetsAtsMinimum(result) ? "status-selected" : "status-rejected"}`}>{meetsAtsMinimum(result) ? "Applicable" : "Not Applicable"}</span><p className="muted">Current score: {result.percentage == null ? "not scored" : `${result.percentage}%`} · Required score: {result.ats_minimum ?? ATS_MINIMUM}%</p>
       <section className="analysis-score-card"><div className="analysis-score-value">{result.percentage == null ? "—" : `${result.percentage}%`}</div><div><h2>{result.percentage == null ? "Not enough job requirements to score" : "Requirement overlap"}</h2><p className="muted">{result.explanation}</p><p className="analysis-disclaimer">{result.disclaimer}</p></div></section>
       {result.percentage != null && <div className="progress-track analysis-overall-bar" role="progressbar" aria-label="Overall requirement overlap" aria-valuenow={result.percentage} aria-valuemin="0" aria-valuemax="100"><span style={{ width: `${result.percentage}%` }}/></div>}
       <section className="editor-block"><div className="section-heading"><div><span className="eyebrow">Transparent scoring</span><h2>Score breakdown</h2></div></div>{components.length ? components.map(item => <ScoreBar key={item.key} label={item.key.replaceAll("_", " ")} score={item.score} weight={item.weight}/>) : <p className="muted">The job did not list scorable requirements.</p>}{result.excluded_categories?.length > 0 && <p className="muted">Not included because the listing did not specify them: {result.excluded_categories.join(", ")}.</p>}</section>
@@ -62,7 +82,7 @@ export function Analysis({ analysisId, onNavigate }) {
   }
 
   return <section className="dashboard-page candidate-form-page analysis-page"><div className="page-heading"><div><span className="eyebrow">Local rule-based matching</span><h1>Resume <em>analysis.</em></h1><p className="muted">{historyTotal} saved comparisons. Scores show resume evidence against the job listing; they are not hiring predictions.</p></div><button className="primary-button" onClick={() => onNavigate("jobs")}>Find a job to analyze →</button></div>
-    <StatusMessage>{error}</StatusMessage>{history === null ? error ? <button className="secondary-button" onClick={retryHistory}>Try loading again</button> : <LoadingIndicator label="Loading analysis history…"/> : history.length ? <div className="analysis-history-list">{history.map(item => <article className="analysis-history-card" key={item.id}><div className="analysis-history-score">{item.percentage == null ? "—" : `${item.percentage}%`}</div><div className="row-main"><strong>{item.job_snapshot?.title || "Job analysis"}</strong><small>{[item.job_snapshot?.company_name, item.resume_name, item.created_at ? new Date(item.created_at).toLocaleString() : ""].filter(Boolean).join(" · ")}</small></div><button className="secondary-button" onClick={() => onNavigate(`analysis-result-${item.id}`)}>View result</button><button className="text-button danger-text" onClick={() => setDeleteTarget(item)}>Delete</button></article>)}</div> : <div className="empty-state compact-empty"><div className="empty-icon">◒</div><h3>No analyses saved yet</h3><p>Open any published job and choose Analyze Resume to compare it with a processed resume.</p><button className="secondary-button" onClick={() => onNavigate("jobs")}>Find jobs</button></div>}
+    <StatusMessage>{error}</StatusMessage>{history === null ? error ? <button className="secondary-button" onClick={retryHistory}>Try loading again</button> : <LoadingIndicator label="Loading analysis history…"/> : history.length ? <div className="analysis-history-list">{history.map(item => <article className="analysis-history-card" key={item.id}><div className="analysis-history-score">{item.percentage == null ? "—" : `${item.percentage}%`}</div><div className="row-main"><strong>{item.job_snapshot?.title || "Job analysis"}</strong><small>{[item.job_snapshot?.company_name, item.resume_name, item.created_at ? new Date(item.created_at).toLocaleString() : ""].filter(Boolean).join(" · ")}</small></div><span className={`status-badge ${meetsAtsMinimum(item) ? "status-selected" : "status-rejected"}`}>{meetsAtsMinimum(item) ? "Applicable" : "Not Applicable"}</span><button className="secondary-button" onClick={() => onNavigate(`analysis-result-${item.id}`)}>View result</button><button className="text-button danger-text" onClick={() => setDeleteTarget(item)}>Delete</button></article>)}</div> : <div className="empty-state compact-empty"><div className="empty-icon">◒</div><h3>No analyses saved yet</h3><p>Open any published job and choose Analyze Resume to compare it with a processed resume.</p><button className="secondary-button" onClick={() => onNavigate("jobs")}>Find jobs</button></div>}
     <ConfirmDialog open={Boolean(deleteTarget)} title="Delete this analysis?" message="This saved comparison will be permanently removed from your history." confirmLabel="Delete analysis" busy={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={deleteAnalysis}/>
   </section>;
 }

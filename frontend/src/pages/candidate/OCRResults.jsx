@@ -5,14 +5,39 @@ const fields = [
   ["name", "Full name", "text"], ["email", "Email address", "email"], ["phone", "Phone number", "tel"],
 ];
 
+function formatListItem(item) {
+  if (item == null) return "";
+  if (typeof item === "string") return item;
+  if (typeof item === "object") {
+    if (item.degree || item.qualification) {
+      return `${item.degree || item.qualification} — ${item.institution || item.college || ""}`.trim();
+    }
+    if (item.job_title) {
+      return `${item.job_title} — ${item.company || item.company_name || ""}`.trim();
+    }
+    return item.name || item.skill || item.title || "";
+  }
+  return String(item);
+}
+
 function toForm(data = {}) {
+  const safeEducation = Array.isArray(data.education)
+    ? data.education.map(formatListItem).filter(Boolean).join("\n")
+    : (typeof data.education === "string" ? data.education : "");
+  const safeExperience = Array.isArray(data.experience)
+    ? data.experience.map(formatListItem).filter(Boolean).join("\n")
+    : (typeof data.experience === "string" ? data.experience : "");
+  const safeSkills = Array.isArray(data.skills)
+    ? data.skills.map(s => typeof s === "object" && s !== null ? (s.name || s.skill || s.title || "") : String(s || "")).filter(Boolean).join(", ")
+    : (typeof data.skills === "string" ? data.skills : "");
+
   return {
     name: data.name || "",
     email: data.email || "",
     phone: data.phone || "",
-    education: Array.isArray(data.education) ? data.education.join("\n") : data.education || "",
-    experience: Array.isArray(data.experience) ? data.experience.join("\n") : data.experience || "",
-    skills: Array.isArray(data.skills) ? data.skills.join(", ") : data.skills || "",
+    education: safeEducation,
+    experience: safeExperience,
+    skills: safeSkills,
     pages: data.pages || [],
     raw_text: data.raw_text || "",
   };

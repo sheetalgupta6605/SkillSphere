@@ -1,4 +1,4 @@
-import { API_URL } from "./api";
+import { API_URL, formatApiError } from "./api";
 
 export function uploadWithProgress(path, body, onProgress = () => {}) {
   return new Promise((resolve, reject) => {
@@ -14,7 +14,7 @@ export function uploadWithProgress(path, body, onProgress = () => {}) {
       let response = {};
       try { response = JSON.parse(xhr.responseText || "{}"); } catch { /* use the fallback below */ }
       if (xhr.status >= 200 && xhr.status < 300) resolve(response);
-      else reject(new Error(response.detail || "Resume upload failed. Please try again."));
+      else reject(new Error(formatApiError(response) || "Resume upload failed. Please try again."));
     };
     xhr.send(body);
   });

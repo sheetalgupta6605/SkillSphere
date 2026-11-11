@@ -5,9 +5,38 @@ function BackButton({ onNavigate, target = "dashboard", label = "Back to dashboa
 
 export function ResumeBuilder({ onNavigate }) {
   const [profile, setProfile] = useState(null); const [form, setForm] = useState({ headline: "", summary: "", skills: "" }); const [message, setMessage] = useState("");
-  useEffect(() => { api("/api/candidates/profile").then(data => { setProfile(data); setForm({ headline: data.headline || "", summary: data.summary || "", skills: (data.skills || []).join(", ") }); }).catch(err => setMessage(err.message)); }, []);
+  useEffect(() => {
+    api("/api/candidates/profile")
+      .then((data) => {
+        setProfile(data);
+        const skillString = (data?.skills || [])
+          .map((s) => (typeof s === "object" && s !== null ? (s.name || s.skill || s.title || "") : String(s || "")).trim())
+          .filter(Boolean)
+          .join(", ");
+        setForm({ headline: data?.headline || "", summary: data?.summary || "", skills: skillString });
+      })
+      .catch((err) => setMessage(err?.message || "Failed to load profile for resume builder."));
+  }, []);
   function update(key, value) { setForm(current => ({ ...current, [key]: value })); }
-  async function save() { try { await api("/api/candidates/profile", { method: "PUT", body: JSON.stringify({ ...profile, ...form, skills: form.skills.split(",").map(item => item.trim()).filter(Boolean), linkedin: profile.linkedin || null, github: profile.github || null, portfolio: profile.portfolio || null }) }); setMessage("Builder details saved to your profile."); } catch (err) { setMessage(err.message); } }
+  async function save() {
+    try {
+      const skillsArray = form.skills.split(",").map(item => item.trim()).filter(Boolean);
+      await api("/api/candidates/profile", {
+        method: "PUT",
+        body: JSON.stringify({
+          ...profile,
+          ...form,
+          skills: skillsArray,
+          linkedin: profile.linkedin || null,
+          github: profile.github || null,
+          portfolio: profile.portfolio || null
+        })
+      });
+      setMessage("Builder details saved to your profile.");
+    } catch (err) {
+      setMessage(err?.message || (typeof err === "string" ? err : "Failed to save profile."));
+    }
+  }
   function download() { const education = (profile?.education || []).map(item => `${item.degree || item.qualification || "Education"} — ${item.institution || item.college || ""}`).join("\n"); const experience = (profile?.experience || []).map(item => `${item.job_title || "Role"} — ${item.company || item.company_name || ""}\n${item.description || ""}`).join("\n\n"); const content = `${profile?.full_name || "Your Name"}\n${form.headline}\n\nSUMMARY\n${form.summary}\n\nSKILLS\n${form.skills}\n\nEDUCATION\n${education}\n\nEXPERIENCE\n${experience}`; const blob = new Blob([content], { type: "text/plain" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "skillsphere-resume.txt"; link.click(); }
   if (!profile) return <section className="dashboard-page"><div className="loading">Loading resume builder…</div></section>;
   return <section className="dashboard-page builder-page"><BackButton onNavigate={onNavigate}/><span className="eyebrow">Resume builder</span><h1>Shape your <em>story.</em></h1><p className="muted page-intro">Build a clean, ATS-friendly resume from the profile information you already saved.</p><div className="builder-layout"><form className="profile-form builder-form" onSubmit={e => { e.preventDefault(); save(); }}><label>Professional headline<input value={form.headline} onChange={e => update("headline", e.target.value)} placeholder="Frontend Developer"/></label><label>Professional summary<textarea rows="7" value={form.summary} onChange={e => update("summary", e.target.value)} placeholder="A concise summary of your strengths and goals"/></label><label>Skills <small>comma separated</small><input value={form.skills} onChange={e => update("skills", e.target.value)}/></label>{message && <div className={message.includes("saved") ? "success-box" : "error-box"}>{message}</div>}<div className="detail-actions"><button className="primary-button">Save profile</button><button type="button" className="secondary-button" onClick={download}>Download TXT</button><button type="button" className="secondary-button" onClick={() => window.print()}>Print / Save PDF</button></div></form><article className="resume-preview"><span className="eyebrow">Live preview</span><h2>{profile.full_name || "Your Name"}</h2><p className="resume-preview-headline">{form.headline || "Professional headline"}</p><hr/><h3>Summary</h3><p>{form.summary || "Your summary will appear here."}</p><h3>Skills</h3><p>{form.skills || "Add skills in the editor."}</p>{profile.education?.length > 0 && <><h3>Education</h3>{profile.education.map((item, index) => <p key={index}><strong>{item.degree || item.qualification}</strong><br/>{item.institution || item.college}</p>)}</>}</article></div></section>;

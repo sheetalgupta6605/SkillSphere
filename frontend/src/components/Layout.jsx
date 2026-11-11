@@ -5,7 +5,9 @@ const candidateLinks = [
   ["dashboard", "Dashboard", "⌂"], ["profile", "My Profile", "▤"],
   ["resume", "Resume", "▣"], ["jobs", "Find Jobs", "⌕"],
   ["saved", "Saved Jobs", "♡"], ["recently-viewed", "Recently Viewed", "◷"], ["applications", "My Applications", "☷"],
-  ["analysis", "Resume Analysis", "◒"], ["job-matcher", "AI Job Matcher", "✧"], ["notifications", "Notifications", "♧"],
+  ["analysis", "Resume Analysis", "◒"],
+  // ["job-matcher", "AI Job Matcher", "✧"], 
+  ["notifications", "Notifications", "♧"],
 ];
 const recruiterLinks = [
   ["dashboard", "Dashboard", "⌂"], ["company", "Company Profile", "◇"], ["recruiter-profile", "Recruiter Profile", "♙"],
@@ -29,7 +31,9 @@ export function ThemeButton({ theme, setTheme }) {
 export function Navbar({ theme, setTheme, user, onNavigate, onLogout }) {
   const [menuOpen, setMenuOpen] = useState(false);
   function go(target) { setMenuOpen(false); onNavigate(target); }
-  return <nav className="navbar"><button className="brand" onClick={() => go("home")}><span className="brand-mark">S</span> SkillSphere</button><div className={`nav-links ${menuOpen ? "open" : ""}`}><button onClick={() => go("jobs")}>Explore Jobs</button><button onClick={() => go("recruiters")}>For Recruiters</button><button onClick={() => go("about")}>About</button></div><div className="nav-actions"><ThemeButton theme={theme} setTheme={setTheme}/>{user ? <><button className="nav-user" onClick={() => go("dashboard")}>{user.full_name}</button><button className="text-button" onClick={onLogout}>Logout</button></> : <><button className="text-button" onClick={() => go("login")}>Login</button><button className="primary-button small" onClick={() => go("register")}>Get Started</button></>}<button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle navigation" aria-expanded={menuOpen}>{menuOpen ? "×" : "☰"}</button></div></nav>;
+  return <nav className="navbar"><button className="brand" onClick={() => go("home")}><span className="brand-mark">S</span> SkillSphere</button><div className={`nav-links ${menuOpen ? "open" : ""}`}><button onClick={() => go("jobs")}>Explore Jobs</button><button onClick={() => go("recruiters")}>For Recruiters</button><button onClick={() => go("about")}>About</button></div><div className="nav-actions"><ThemeButton theme={theme} setTheme={setTheme} />{user ? <><button className="nav-user" onClick={() => go("dashboard")}>{user.full_name}</button><button className="text-button" onClick={onLogout}>Logout</button></> : <><button className="text-button" onClick={() => go("login")}>Login</button><button className="primary-button small" onClick={() => go("register")}>Get Started</button></>}<button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle navigation" aria-expanded={menuOpen}>
+    {menuOpen ? "×" : "☰"}
+  </button></div></nav>;
 }
 
 export function DashboardLayout({ user, theme, setTheme, onNavigate, onLogout, activePage, children, role: roleOverride }) {
@@ -44,7 +48,7 @@ export function DashboardLayout({ user, theme, setTheme, onNavigate, onLogout, a
 
   useEffect(() => {
     let alive = true;
-    const refresh = () => api("/api/notifications/unread-count").then(value => { if (alive) setUnreadCount(value.count || 0); }).catch(() => {});
+    const refresh = () => api("/api/notifications/unread-count").then(value => { if (alive) setUnreadCount(value.count || 0); }).catch(() => { });
     refresh();
     const timer = window.setInterval(refresh, 30000);
     return () => { alive = false; window.clearInterval(timer); };
@@ -84,7 +88,7 @@ export function DashboardLayout({ user, theme, setTheme, onNavigate, onLogout, a
         {/* <button className="mobile-sidebar-toggle" onClick={toggleNavigation} aria-label={mobileOpen ? "Close navigation" : collapsed ? "Expand sidebar" : "Collapse sidebar"} title={collapsed ? "Expand sidebar" : "Toggle navigation"}>{mobileOpen ? "×" : "☰"}</button> */}
         <span className="eyebrow dashboard-page-title">{activeLabel}</span>
         <div className="top-actions">
-          <ThemeButton theme={theme} setTheme={setTheme}/>
+          <ThemeButton theme={theme} setTheme={setTheme} />
           <button className="icon-button notification-bell" onClick={() => onNavigate("notifications")} aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`} title="Notifications">♧{unreadCount > 0 && <span className="notification-count">{unreadCount > 99 ? "99+" : unreadCount}</span>}</button>
           <div className="profile-menu">
             <button className="profile-menu-trigger" aria-haspopup="menu" aria-expanded={profileOpen} onClick={() => setProfileOpen((value) => !value)}>

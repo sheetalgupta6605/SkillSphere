@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from app.database import get_database
 from app.dependencies import current_user, require_role
 from app.schemas.jobs import JobCreate
+from app.services.application_eligibility import require_eligible_analysis
 
 
 router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
@@ -16,6 +17,7 @@ router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
 
 class ApplicationCreate(BaseModel):
     resume_id: str | None = None
+    resume_analysis_id: str | None = None
 
 
 def serialize_job(job: dict) -> dict:
@@ -242,8 +244,9 @@ async def apply_to_job(job_id: str, payload: ApplicationCreate | None = None, us
         raise HTTPException(status_code=422, detail="Select a resume before applying.")
     if selected_resume.get("status") != "completed":
         raise HTTPException(status_code=409, detail="Wait until resume processing is complete before applying.")
+    analysis = await require_eligible_analysis(db, candidate_id, job, selected_resume, payload.resume_analysis_id if payload else None)
     now = datetime.now(timezone.utc)
-    application = {"candidate_id": candidate_id, "job_id": job_id, "recruiter_id": job.get("recruiter_id"), "resume_id": str(selected_resume["_id"]), "resume_name": selected_resume.get("original_name"), "status": "submitted", "created_at": now, "updated_at": now, "status_history": [{"previous_status": None, "new_status": "submitted", "status": "submitted", "at": now, "actor_id": candidate_id, "actor_role": "candidate"}]}
+    application = {"candidate_id": candidate_id, "job_id": job_id, "recruiter_id": job.get("recruiter_id"), "resume_id": str(selected_resume["_id"]), "resume_name": selected_resume.get("original_name"), "resume_analysis_id": str(analysis["_id"]), "ai_match_score_snapshot": analysis.get("percentage"), "status": "submitted", "created_at": now, "updated_at": now, "status_history": [{"previous_status": None, "new_status": "submitted", "status": "submitted", "at": now, "actor_id": candidate_id, "actor_role": "candidate"}]}
     try:
         result = await db.applications.insert_one(application)
     except Exception as exc:

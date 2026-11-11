@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from app.database import get_database
 from app.dependencies import require_role
 from app.routers.jobs import active_jobs_query, attach_company_details
+from app.services.application_eligibility import ATS_MINIMUM_PERCENTAGE, meets_ats_minimum
 from app.services.resume_matching import analyze_resume_match
 from app.services.resume_matching import analyze_jobs_with_gemini
 
@@ -28,6 +29,8 @@ def serialize_analysis(value: dict) -> dict:
     result = dict(value)
     if "_id" in result:
         result["id"] = str(result.pop("_id"))
+    result["ats_minimum"] = ATS_MINIMUM_PERCENTAGE
+    result["meets_ats_minimum"] = meets_ats_minimum(result.get("percentage"))
     return result
 
 
@@ -56,10 +59,6 @@ async def _analyze(job_id: str, resume_id: str | None, user: dict, db):
 
     resume_version = resume.get("ocr_corrected_at") or resume.get("processed_at")
     job_version = job.get("updated_at") or job.get("created_at")
-    if resume_version is not None and job_version is not None:
-        previous = await db.resume_analyses.find_one({"candidate_id": candidate_id, "resume_id": str(resume["_id"]), "job_id": job_id, "resume_version": resume_version, "job_version": job_version}, sort=[("created_at", -1)])
-        if previous:
-            return serialize_analysis(previous)
 
     try:
         score = analyze_resume_match(resume, job)

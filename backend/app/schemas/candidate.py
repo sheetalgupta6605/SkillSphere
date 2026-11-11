@@ -76,6 +76,20 @@ class ProjectRecord(BaseModel):
     project_link: HttpUrl | None = None
     github_link: HttpUrl | None = None
 
+    @field_validator("project_link", "github_link", mode="before")
+    @classmethod
+    def normalize_project_url(cls, value):
+        if not value:
+            return None
+        if isinstance(value, str):
+            val = value.strip()
+            if not val:
+                return None
+            if not (val.startswith("http://") or val.startswith("https://")):
+                return f"https://{val}"
+            return val
+        return value
+
     @model_validator(mode="before")
     @classmethod
     def normalize_legacy_fields(cls, value):
@@ -114,10 +128,38 @@ class CandidateProfileUpdate(BaseModel):
     portfolio: HttpUrl | None = None
     recruiter_discoverable: bool = False
 
+    @field_validator("linkedin", "github", "portfolio", "profile_photo", mode="before")
+    @classmethod
+    def normalize_profile_url(cls, value):
+        if not value:
+            return None
+        if isinstance(value, str):
+            val = value.strip()
+            if not val:
+                return None
+            if not (val.startswith("http://") or val.startswith("https://")):
+                return f"https://{val}"
+            return val
+        return value
+
     @field_validator("full_name", "phone", "location", "city", "state", "country", "headline", "summary", "current_job_title", "total_experience", "employment_status", mode="before")
     @classmethod
     def trim_text(cls, value):
         return value.strip() if isinstance(value, str) else value
+
+    @field_validator("skills", mode="before")
+    @classmethod
+    def sanitize_skills_list(cls, values):
+        if not isinstance(values, list):
+            return []
+        normalized = []
+        for val in values:
+            if isinstance(val, dict):
+                s = val.get("name") or val.get("skill") or val.get("title") or ""
+            else:
+                s = str(val or "")
+            normalized.append(s)
+        return normalized
 
     @field_validator("skills")
     @classmethod

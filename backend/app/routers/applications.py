@@ -5,7 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.database import get_database
+from app.database.profiles import find_candidate_profile
 from app.dependencies import require_role
+from app.routers.resumes import safe_resume_path
+from app.services.application_eligibility import require_eligible_analysis
 from app.services.notifications import create_notification
 from app.routers.jobs import active_jobs_query, attach_company_details
 
@@ -13,7 +16,7 @@ router = APIRouter(prefix="/api/applications", tags=["Applications"])
 
 
 class ApplicationCreate(BaseModel):
-    resume_id: str = Field(min_length=1, max_length=64)
+    resume_id: str | None = Field(default=None, max_length=64)
     cover_letter: str = Field(default="", max_length=10000)
     screening_answers: dict[str, str] = Field(default_factory=dict)
     resume_analysis_id: str | None = Field(default=None, max_length=64)
@@ -59,13 +62,43 @@ async def submit_application(job_id: str, payload: ApplicationCreate, user: dict
         raise HTTPException(status_code=403, detail="You cannot apply to your own job posting.")
     if await db.applications.find_one({"candidate_id": candidate_id, "job_id": job_id}):
         raise HTTPException(status_code=409, detail="You have already applied for this job.")
-    if not ObjectId.is_valid(payload.resume_id):
-        raise HTTPException(status_code=400, detail="Invalid resume ID")
-    resume = await db.resumes.find_one({"_id": ObjectId(payload.resume_id), "candidate_id": candidate_id})
+
+    # Candidate must have a valid resume to apply
+    # First check provided resume_id, then candidate profile resume, then latest completed account resume
+    resume = None
+    target_resume_id = (payload.resume_id or "").strip()
+    if target_resume_id and ObjectId.is_valid(target_resume_id):
+        resume = await db.resumes.find_one({"_id": ObjectId(target_resume_id), "candidate_id": candidate_id})
+
     if not resume:
-        raise HTTPException(status_code=404, detail="Selected resume was not found in your account.")
+        profile = await find_candidate_profile(db, candidate_id)
+        profile_resume_id = (profile or {}).get("resume_id")
+        if profile_resume_id and ObjectId.is_valid(str(profile_resume_id)):
+            resume = await db.resumes.find_one({"_id": ObjectId(str(profile_resume_id)), "candidate_id": candidate_id})
+
+    if not resume:
+        resume = await db.resumes.find_one({"candidate_id": candidate_id, "status": "completed"}, sort=[("created_at", -1)])
+
+    if not resume:
+        raise HTTPException(
+            status_code=422,
+            detail="A valid resume is mandatory to apply for a job. Please upload a PDF resume before submitting your application."
+        )
+
     if resume.get("status") != "completed":
         raise HTTPException(status_code=409, detail="Wait until resume processing is complete before applying.")
+
+    try:
+        file_path = safe_resume_path(resume.get("stored_name", ""))
+        if not file_path.is_file():
+            raise HTTPException(status_code=404, detail="The resume file is unavailable on the server.")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="The resume file is unavailable on the server.") from exc
+
+    resolved_resume_id = str(resume["_id"])
+    resolved_resume_name = resume.get("original_name") or "candidate-resume.pdf"
 
     questions = job.get("screening_questions") or job.get("application_questions") or []
     allowed = {
@@ -82,17 +115,12 @@ async def submit_application(job_id: str, payload: ApplicationCreate, user: dict
     if any(len(answer) > 2000 for answer in payload.screening_answers.values()):
         raise HTTPException(status_code=422, detail="Screening answers must be 2,000 characters or fewer.")
 
-    analysis = None
-    if payload.resume_analysis_id:
-        if ObjectId.is_valid(payload.resume_analysis_id):
-            analysis = await db.resume_analyses.find_one({"_id": ObjectId(payload.resume_analysis_id), "candidate_id": candidate_id, "job_id": job_id, "resume_id": payload.resume_id})
-        if not analysis:
-            raise HTTPException(status_code=422, detail="The selected resume analysis does not match this job and resume.")
+    analysis = await require_eligible_analysis(db, candidate_id, job, resume, payload.resume_analysis_id)
     await attach_company_details(db, [job])
     now = datetime.now(timezone.utc)
     application = {
         "candidate_id": candidate_id, "job_id": job_id, "recruiter_id": job.get("recruiter_id"),
-        "resume_id": payload.resume_id, "resume_name": resume.get("original_name"),
+        "resume_id": resolved_resume_id, "resume_name": resolved_resume_name,
         "cover_letter": payload.cover_letter.strip(), "screening_answers": payload.screening_answers,
         "resume_analysis_id": str(analysis["_id"]) if analysis else None,
         "ai_match_score_snapshot": analysis.get("percentage") if analysis else None,

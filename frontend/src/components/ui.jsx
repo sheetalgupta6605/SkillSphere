@@ -4,9 +4,43 @@ export function SearchInput({ value, onChange, placeholder = "Search", label = "
   return <label className="shared-search"><span className="sr-only">{label}</span><span aria-hidden="true">⌕</span><input type="search" aria-label={label} placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
+function formatStatusContent(content) {
+  if (content == null) return null;
+  if (typeof content === "string" || typeof content === "number" || typeof content === "boolean") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    const list = content
+      .map(formatStatusContent)
+      .filter((item) => item !== null && item !== "");
+    if (!list.length) return null;
+    return list.map((item, index) => (
+      <span key={index}>
+        {index > 0 && " • "}
+        {item}
+      </span>
+    ));
+  }
+  if (typeof content === "object") {
+    if (content.$$typeof) {
+      return content; // React element
+    }
+    const text = content.msg || content.message || content.detail || content.error;
+    if (text) return formatStatusContent(text);
+    try {
+      return JSON.stringify(content);
+    } catch {
+      return "Notice";
+    }
+  }
+  return String(content);
+}
+
 export function StatusMessage({ tone = "error", children }) {
   if (!children) return null;
-  return <div className={tone === "success" ? "success-box" : "error-box"} role={tone === "error" ? "alert" : "status"}>{children}</div>;
+  const formatted = formatStatusContent(children);
+  if (!formatted) return null;
+  return <div className={tone === "success" ? "success-box" : "error-box"} role={tone === "error" ? "alert" : "status"}>{formatted}</div>;
 }
 
 export function LoadingIndicator({ label = "Loading…" }) {

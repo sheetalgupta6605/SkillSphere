@@ -2,44 +2,810 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import { ConfirmDialog, LoadingIndicator, StatusMessage } from "../../components/ui";
 
+function normalizeSkill(s) {
+  if (s == null) return "";
+  if (typeof s === "string") return s.trim();
+  if (typeof s === "object") return (s.name || s.skill || s.title || s.label || "").trim();
+  return String(s).trim();
+}
+
+function normalizeUrl(val) {
+  if (!val || typeof val !== "string") return null;
+  const trimmed = val.trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
 const blankEducation = { degree: "", institution: "", field_of_study: "", start_year: null, end_year: null, currently_studying: false, score: "" };
 const blankExperience = { job_title: "", company: "", employment_type: "Full-time", location: "", start_date: "", end_date: "", currently_working: false, description: "" };
 const blankProject = { name: "", description: "", technologies: [], project_link: "", github_link: "" };
 
 export function Profile() {
-  const [profile, setProfile] = useState(null); const [skillsInput, setSkillsInput] = useState(""); const [message, setMessage] = useState(""); const [error, setError] = useState(""); const [saving, setSaving] = useState(false); const [pendingDelete, setPendingDelete] = useState(null);
-  useEffect(() => { api("/api/candidates/me").then(setProfile).catch(err => setError(err.message)); }, []);
+  const [profile, setProfile] = useState(null);
+  const [skillsInput, setSkillsInput] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null);
+
+  useEffect(() => {
+    api("/api/candidates/me")
+      .then((data) => {
+        if (!data) return;
+        setProfile({
+          ...data,
+          skills: Array.isArray(data.skills)
+            ? data.skills.map(normalizeSkill).filter(Boolean)
+            : [],
+          education: Array.isArray(data.education) ? data.education : [],
+          experience: Array.isArray(data.experience) ? data.experience : [],
+          projects: Array.isArray(data.projects)
+            ? data.projects.map((p) => ({
+                ...p,
+                technologies: Array.isArray(p.technologies)
+                  ? p.technologies.map(normalizeSkill).filter(Boolean)
+                  : [],
+              }))
+            : [],
+        });
+      })
+      .catch((err) => setError(err?.message || "Failed to load candidate profile."));
+  }, []);
+
   const completion = useMemo(() => profile?.completion || null, [profile]);
-  if (!profile) return <section className="dashboard-page"><LoadingIndicator label="Loading your profile…"/><StatusMessage>{error}</StatusMessage></section>;
-  function update(key, value) { setProfile(current => ({ ...current, [key]: value })); setMessage(""); }
-  function updateList(key, index, field, value) { setProfile(current => ({ ...current, [key]: (current[key] || []).map((entry, i) => i === index ? { ...entry, [field]: value } : entry) })); setMessage(""); }
-  function addList(key, blank) { update(key, [...(profile[key] || []), { ...blank }]); }
-  function removeList() { const { key, index } = pendingDelete; update(key, (profile[key] || []).filter((_, i) => i !== index)); setPendingDelete(null); }
-  function addSkill(event) { if (event.key !== "Enter" && event.key !== ",") return; event.preventDefault(); const skill = skillsInput.trim(); if (skill && !(profile.skills || []).some(item => item.toLocaleLowerCase() === skill.toLocaleLowerCase())) update("skills", [...(profile.skills || []), skill]); setSkillsInput(""); }
-  function addProjectTechnology(index, event) { if (event.key !== "Enter" && event.key !== ",") return; event.preventDefault(); const value = event.currentTarget.value.trim(); const current = profile.projects[index].technologies || []; if (value && !current.some(item => item.toLowerCase() === value.toLowerCase())) updateList("projects", index, "technologies", [...current, value]); event.currentTarget.value = ""; }
-  async function save(event) {
-    event.preventDefault(); setSaving(true); setError(""); setMessage("");
-    try {
-      const saved = await api("/api/candidates/me", { method: "PUT", body: JSON.stringify({ ...profile, email: undefined, completion: undefined, id: undefined, education: profile.education || [], experience: profile.experience || [], projects: profile.projects || [], skills: profile.skills || [], linkedin: profile.linkedin || null, github: profile.github || null, portfolio: profile.portfolio || null, profile_photo: profile.profile_photo || null }) });
-      setProfile(saved); setMessage("Your profile was saved.");
-    } catch (err) { setError(err.message); } finally { setSaving(false); }
+
+  if (!profile) {
+    return (
+      <section className="dashboard-page">
+        <LoadingIndicator label="Loading your profile…" />
+        <StatusMessage>{error}</StatusMessage>
+      </section>
+    );
   }
+
+  function update(key, value) {
+    setProfile((current) => ({ ...current, [key]: value }));
+    setMessage("");
+  }
+
+  function updateList(key, index, field, value) {
+    setProfile((current) => ({
+      ...current,
+      [key]: (current[key] || []).map((entry, i) =>
+        i === index ? { ...entry, [field]: value } : entry
+      ),
+    }));
+    setMessage("");
+  }
+
+  function addList(key, blank) {
+    update(key, [...(profile[key] || []), { ...blank }]);
+  }
+
+  function removeList() {
+    const { key, index } = pendingDelete;
+    update(key, (profile[key] || []).filter((_, i) => i !== index));
+    setPendingDelete(null);
+  }
+
+  function addSkill(event) {
+    if (event.key !== "Enter" && event.key !== ",") return;
+    event.preventDefault();
+    const skill = skillsInput.trim();
+    if (!skill) return;
+    const currentSkills = (profile.skills || []).map(normalizeSkill).filter(Boolean);
+    if (!currentSkills.some((item) => item.toLowerCase() === skill.toLowerCase())) {
+      update("skills", [...currentSkills, skill]);
+    }
+    setSkillsInput("");
+  }
+
+  function addProjectTechnology(index, event) {
+    if (event.key !== "Enter" && event.key !== ",") return;
+    event.preventDefault();
+    const value = event.currentTarget.value.trim();
+    if (!value) return;
+    const current = (profile.projects?.[index]?.technologies || []).map(normalizeSkill).filter(Boolean);
+    if (!current.some((item) => item.toLowerCase() === value.toLowerCase())) {
+      updateList("projects", index, "technologies", [...current, value]);
+    }
+    event.currentTarget.value = "";
+  }
+
+  async function save(event) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const cleanEducation = (profile.education || [])
+        .filter((entry) => entry && ((entry.degree || entry.qualification)?.trim() || (entry.institution || entry.college)?.trim()))
+        .map((entry) => ({
+          ...entry,
+          degree: (entry.degree || entry.qualification || "").trim(),
+          institution: (entry.institution || entry.college || "").trim(),
+          field_of_study: (entry.field_of_study || "").trim(),
+          start_year: entry.start_year ? Number(entry.start_year) : null,
+          end_year: entry.end_year ? Number(entry.end_year) : (entry.graduation_year ? Number(entry.graduation_year) : null),
+          score: (entry.score || "").trim(),
+        }));
+
+      const cleanExperience = (profile.experience || [])
+        .filter((entry) => entry && ((entry.job_title || "")?.trim() || (entry.company || entry.company_name || "")?.trim()))
+        .map((entry) => ({
+          ...entry,
+          job_title: (entry.job_title || "").trim(),
+          company: (entry.company || entry.company_name || "").trim(),
+          employment_type: entry.employment_type || "Full-time",
+          location: (entry.location || "").trim(),
+          start_date: (entry.start_date || "").trim(),
+          end_date: entry.currently_working ? "" : (entry.end_date || "").trim(),
+          description: (entry.description || "").trim(),
+        }));
+
+      const cleanProjects = (profile.projects || [])
+        .filter((entry) => entry && (entry.name || entry.project_name)?.trim())
+        .map((entry) => ({
+          ...entry,
+          name: (entry.name || entry.project_name || "").trim(),
+          description: (entry.description || "").trim(),
+          technologies: (entry.technologies || []).map(normalizeSkill).filter(Boolean),
+          project_link: normalizeUrl(entry.project_link),
+          github_link: normalizeUrl(entry.github_link),
+        }));
+
+      const cleanSkills = (profile.skills || []).map(normalizeSkill).filter(Boolean);
+
+      const payload = {
+        ...profile,
+        email: undefined,
+        completion: undefined,
+        id: undefined,
+        education: cleanEducation,
+        experience: cleanExperience,
+        projects: cleanProjects,
+        skills: cleanSkills,
+        linkedin: normalizeUrl(profile.linkedin),
+        github: normalizeUrl(profile.github),
+        portfolio: normalizeUrl(profile.portfolio),
+        profile_photo: normalizeUrl(profile.profile_photo),
+      };
+
+      const saved = await api("/api/candidates/me", {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+
+      setProfile(saved);
+      setMessage("Your profile was saved.");
+    } catch (err) {
+      setError(err?.message || (typeof err === "string" ? err : "Failed to save profile."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const fields = completion?.sections || {};
-  return <section className="dashboard-page candidate-form-page"><span className="eyebrow">Candidate profile</span><h1>Tell your <em>story.</em></h1><p className="muted page-intro">Manage your details, experience, skills, and projects. Your updates are saved to your candidate profile.</p>
-    <section className="editor-block" aria-label="Profile completion"><div className="section-heading"><div><span className="eyebrow">Profile completion</span><h2>{completion?.percentage ?? 0}% complete</h2></div></div><div className="progress-track" role="progressbar" aria-valuenow={completion?.percentage ?? 0} aria-valuemin="0" aria-valuemax="100"><span style={{ width: `${completion?.percentage ?? 0}%` }}/></div><p className="muted panel-copy">Complete the marked sections to strengthen your profile.</p><div className="chip-list">{Object.entries(fields).filter(([, complete]) => !complete).map(([label]) => <span className="skill-chip" key={label}>{label} needed</span>)}{!Object.values(fields).some(value => !value) && <span className="muted">All required sections are complete.</span>}</div></section>
-    <form className="profile-form" onSubmit={save}>
-      <section className="editor-block recruiter-visibility"><div><span className="eyebrow">Privacy</span><h2>Recruiter discovery</h2><p className="muted">When enabled, recruiters can find your professional profile and available resume. Your email and phone number stay private.</p></div><label className="checkbox-label"><input type="checkbox" checked={Boolean(profile.recruiter_discoverable)} onChange={event => update("recruiter_discoverable", event.target.checked)}/> Allow recruiters to discover my profile</label></section>
-      <section className="editor-block"><div className="section-heading"><div><span className="eyebrow">Personal information</span><h2>How to reach you</h2></div></div><div className="form-grid">
-        <label>Full name<input required maxLength="120" value={profile.full_name || ""} onChange={e => update("full_name", e.target.value)}/></label><label>Email address<input type="email" value={profile.email || ""} disabled/></label><label>Phone number<input type="tel" maxLength="30" value={profile.phone || ""} onChange={e => update("phone", e.target.value)}/></label><label>Profile photo URL<input type="url" placeholder="https://…" value={profile.profile_photo || ""} onChange={e => update("profile_photo", e.target.value)}/></label><label>Date of birth (optional)<input type="date" value={profile.date_of_birth || ""} onChange={e => update("date_of_birth", e.target.value)}/></label><label>Gender (optional)<select value={profile.gender || ""} onChange={e => update("gender", e.target.value)}><option value="">Prefer not to say</option><option>Female</option><option>Male</option><option>Non-binary</option><option>Other</option></select></label><label>Location<input maxLength="120" value={profile.location || ""} onChange={e => update("location", e.target.value)} placeholder="e.g. Bengaluru"/></label><label>City<input maxLength="100" value={profile.city || ""} onChange={e => update("city", e.target.value)}/></label><label>State<input maxLength="100" value={profile.state || ""} onChange={e => update("state", e.target.value)}/></label><label>Country<input maxLength="100" value={profile.country || ""} onChange={e => update("country", e.target.value)}/></label></div><label>Address<textarea rows="2" maxLength="300" value={profile.address || ""} onChange={e => update("address", e.target.value)}/></label></section>
-      <section className="editor-block"><div className="section-heading"><div><span className="eyebrow">Professional information</span><h2>Your direction</h2></div></div><label>Professional headline<input maxLength="160" value={profile.headline || ""} onChange={e => update("headline", e.target.value)} placeholder="e.g. Product designer building accessible tools"/></label><label>About me / career objective<textarea rows="5" maxLength="3000" value={profile.summary || ""} onChange={e => update("summary", e.target.value)}/></label><div className="form-grid"><label>Current job title (optional)<input maxLength="120" value={profile.current_job_title || ""} onChange={e => update("current_job_title", e.target.value)}/></label><label>Total experience (optional)<input maxLength="40" value={profile.total_experience || ""} onChange={e => update("total_experience", e.target.value)} placeholder="e.g. 3 years"/></label><label>Employment status<select value={profile.employment_status || ""} onChange={e => update("employment_status", e.target.value)}><option value="">Choose status</option><option>Employed</option><option>Unemployed</option><option>Freelance</option><option>Student</option><option>Open to work</option></select></label></div></section>
-      <section className="editor-block"><div className="section-heading"><div><span className="eyebrow">Skills</span><h2>Your strengths</h2></div></div><div className="chip-list">{(profile.skills || []).map(skill => <button type="button" className="skill-chip" key={skill} onClick={() => update("skills", profile.skills.filter(item => item !== skill))}>{skill} <span aria-label={`Remove ${skill}`}>×</span></button>)}</div><input value={skillsInput} maxLength="80" onChange={e => setSkillsInput(e.target.value)} onKeyDown={addSkill} placeholder="Type a skill and press Enter"/><small className="muted">Select a skill tag to remove it.</small></section>
-      <section className="editor-block"><div className="section-heading"><div><span className="eyebrow">Education</span><h2>Learning journey</h2></div><button type="button" className="secondary-button small-action" onClick={() => addList("education", blankEducation)}>+ Add education</button></div>{(profile.education || []).map((entry, index) => <div className="repeat-card" key={entry.id || index}><div className="form-grid"><label>Degree<input required maxLength="120" value={entry.degree || entry.qualification || ""} onChange={e => updateList("education", index, "degree", e.target.value)}/></label><label>Institution<input required maxLength="160" value={entry.institution || entry.college || ""} onChange={e => updateList("education", index, "institution", e.target.value)}/></label><label>Field of study<input maxLength="120" value={entry.field_of_study || ""} onChange={e => updateList("education", index, "field_of_study", e.target.value)}/></label><label>Start year<input type="number" min="1950" max="2100" value={entry.start_year ?? ""} onChange={e => updateList("education", index, "start_year", e.target.value ? Number(e.target.value) : null)}/></label><label>End year<input type="number" min="1950" max="2100" disabled={entry.currently_studying} value={entry.end_year ?? entry.graduation_year ?? ""} onChange={e => updateList("education", index, "end_year", e.target.value ? Number(e.target.value) : null)}/></label><label>Grade / CGPA (optional)<input maxLength="40" value={entry.score || ""} onChange={e => updateList("education", index, "score", e.target.value)}/></label></div><label className="checkbox-label"><input type="checkbox" checked={Boolean(entry.currently_studying)} onChange={e => updateList("education", index, "currently_studying", e.target.checked)}/> Currently studying</label><button type="button" className="text-button danger-text" onClick={() => setPendingDelete({ key: "education", index, label: "education record" })}>Remove education</button></div>)}{!profile.education?.length && <p className="muted">No education added yet.</p>}</section>
-      <section className="editor-block"><div className="section-heading"><div><span className="eyebrow">Work experience</span><h2>Where you’ve worked</h2></div><button type="button" className="secondary-button small-action" onClick={() => addList("experience", blankExperience)}>+ Add experience</button></div>{(profile.experience || []).map((entry, index) => <div className="repeat-card" key={entry.id || index}><div className="form-grid"><label>Job title<input required maxLength="120" value={entry.job_title || ""} onChange={e => updateList("experience", index, "job_title", e.target.value)}/></label><label>Company<input required maxLength="160" value={entry.company || entry.company_name || ""} onChange={e => updateList("experience", index, "company", e.target.value)}/></label><label>Employment type<select value={entry.employment_type || "Full-time"} onChange={e => updateList("experience", index, "employment_type", e.target.value)}><option>Full-time</option><option>Part-time</option><option>Contract</option><option>Internship</option><option>Freelance</option></select></label><label>Location<input maxLength="120" value={entry.location || ""} onChange={e => updateList("experience", index, "location", e.target.value)}/></label><label>Start date<input required type="date" value={entry.start_date || ""} onChange={e => updateList("experience", index, "start_date", e.target.value)}/></label><label>End date<input type="date" disabled={entry.currently_working} value={entry.end_date || ""} onChange={e => updateList("experience", index, "end_date", e.target.value)}/></label></div><label className="checkbox-label"><input type="checkbox" checked={Boolean(entry.currently_working)} onChange={e => updateList("experience", index, "currently_working", e.target.checked)}/> Currently working here</label><label>Description<textarea rows="3" maxLength="3000" value={entry.description || ""} onChange={e => updateList("experience", index, "description", e.target.value)}/></label><button type="button" className="text-button danger-text" onClick={() => setPendingDelete({ key: "experience", index, label: "work experience record" })}>Remove experience</button></div>)}{!profile.experience?.length && <p className="muted">No work experience added yet.</p>}</section>
-      <section className="editor-block"><div className="section-heading"><div><span className="eyebrow">Projects</span><h2>Work you can show</h2></div><button type="button" className="secondary-button small-action" onClick={() => addList("projects", blankProject)}>+ Add project</button></div>{(profile.projects || []).map((entry, index) => <div className="repeat-card" key={entry.id || index}><label>Project name<input required maxLength="140" value={entry.name || entry.project_name || ""} onChange={e => updateList("projects", index, "name", e.target.value)}/></label><label>Description<textarea rows="3" maxLength="3000" value={entry.description || ""} onChange={e => updateList("projects", index, "description", e.target.value)}/></label><label>Technologies<input placeholder="Add a technology, press Enter" onKeyDown={e => addProjectTechnology(index, e)}/></label><div className="chip-list">{(entry.technologies || []).map(tech => <button type="button" className="skill-chip" key={tech} onClick={() => updateList("projects", index, "technologies", entry.technologies.filter(item => item !== tech))}>{tech} ×</button>)}</div><div className="form-grid"><label>Project link<input type="url" placeholder="https://…" value={entry.project_link || ""} onChange={e => updateList("projects", index, "project_link", e.target.value)}/></label><label>GitHub link<input type="url" placeholder="https://github.com/…" value={entry.github_link || ""} onChange={e => updateList("projects", index, "github_link", e.target.value)}/></label></div><button type="button" className="text-button danger-text" onClick={() => setPendingDelete({ key: "projects", index, label: "project" })}>Remove project</button></div>)}{!profile.projects?.length && <p className="muted">No projects added yet.</p>}</section>
-      <section className="editor-block"><div className="section-heading"><div><span className="eyebrow">Social and portfolio links</span><h2>Find you online</h2></div></div><div className="form-grid"><label>LinkedIn<input type="url" placeholder="https://linkedin.com/in/…" value={profile.linkedin || ""} onChange={e => update("linkedin", e.target.value)}/></label><label>GitHub<input type="url" placeholder="https://github.com/…" value={profile.github || ""} onChange={e => update("github", e.target.value)}/></label><label>Portfolio website<input type="url" placeholder="https://…" value={profile.portfolio || ""} onChange={e => update("portfolio", e.target.value)}/></label></div></section>
-      <StatusMessage>{error}</StatusMessage><StatusMessage tone="success">{message}</StatusMessage><button className="primary-button" disabled={saving}>{saving ? "Saving…" : "Save profile →"}</button>
-    </form><ConfirmDialog open={Boolean(pendingDelete)} title="Remove this item?" message={`This ${pendingDelete?.label || "item"} will be removed from the form. Save your profile to make the change permanent.`} confirmLabel="Remove" onCancel={() => setPendingDelete(null)} onConfirm={removeList}/>
-  </section>;
+
+  return (
+    <section className="dashboard-page candidate-form-page">
+      <span className="eyebrow">Candidate profile</span>
+      <h1>Tell your <em>story.</em></h1>
+      <p className="muted page-intro">
+        Manage your details, experience, skills, and projects. Your updates are saved to your candidate profile.
+      </p>
+
+      <section className="editor-block" aria-label="Profile completion">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Profile completion</span>
+            <h2>{completion?.percentage ?? 0}% complete</h2>
+          </div>
+        </div>
+        <div className="progress-track" role="progressbar" aria-valuenow={completion?.percentage ?? 0} aria-valuemin="0" aria-valuemax="100">
+          <span style={{ width: `${completion?.percentage ?? 0}%` }} />
+        </div>
+        <p className="muted panel-copy">Complete the marked sections to strengthen your profile.</p>
+        <div className="chip-list">
+          {Object.entries(fields)
+            .filter(([, complete]) => !complete)
+            .map(([label]) => (
+              <span className="skill-chip" key={label}>{label} needed</span>
+            ))}
+          {!Object.values(fields).some((value) => !value) && (
+            <span className="muted">All required sections are complete.</span>
+          )}
+        </div>
+      </section>
+
+      <form className="profile-form" onSubmit={save}>
+        <section className="editor-block recruiter-visibility">
+          <div>
+            <span className="eyebrow">Privacy</span>
+            <h2>Recruiter discovery</h2>
+            <p className="muted">
+              When enabled, recruiters can find your professional profile and available resume. Your email and phone number stay private.
+            </p>
+          </div>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={Boolean(profile.recruiter_discoverable)}
+              onChange={(event) => update("recruiter_discoverable", event.target.checked)}
+            />{" "}
+            Allow recruiters to discover my profile
+          </label>
+        </section>
+
+        <section className="editor-block">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Personal information</span>
+              <h2>How to reach you</h2>
+            </div>
+          </div>
+          <div className="form-grid">
+            <label>
+              Full name
+              <input
+                required
+                maxLength="120"
+                value={profile.full_name || ""}
+                onChange={(e) => update("full_name", e.target.value)}
+              />
+            </label>
+            <label>
+              Email address
+              <input type="email" value={profile.email || ""} disabled />
+            </label>
+            <label>
+              Phone number
+              <input
+                type="tel"
+                maxLength="30"
+                value={profile.phone || ""}
+                onChange={(e) => update("phone", e.target.value)}
+              />
+            </label>
+            <label>
+              Date of birth (optional)
+              <input
+                type="date"
+                value={profile.date_of_birth || ""}
+                onChange={(e) => update("date_of_birth", e.target.value)}
+              />
+            </label>
+            <label>
+              Gender (optional)
+              <select
+                value={profile.gender || ""}
+                onChange={(e) => update("gender", e.target.value)}
+              >
+                <option value="">Prefer not to say</option>
+                <option>Female</option>
+                <option>Male</option>
+                <option>Non-binary</option>
+                <option>Other</option>
+              </select>
+            </label>
+            <label>
+              Location
+              <input
+                maxLength="120"
+                value={profile.location || ""}
+                onChange={(e) => update("location", e.target.value)}
+                placeholder="e.g. Bengaluru"
+              />
+            </label>
+            <label>
+              City
+              <input
+                maxLength="100"
+                value={profile.city || ""}
+                onChange={(e) => update("city", e.target.value)}
+              />
+            </label>
+            <label>
+              State
+              <input
+                maxLength="100"
+                value={profile.state || ""}
+                onChange={(e) => update("state", e.target.value)}
+              />
+            </label>
+            <label>
+              Country
+              <input
+                maxLength="100"
+                value={profile.country || ""}
+                onChange={(e) => update("country", e.target.value)}
+              />
+            </label>
+          </div>
+          <label>
+            Address
+            <textarea
+              rows="2"
+              maxLength="300"
+              value={profile.address || ""}
+              onChange={(e) => update("address", e.target.value)}
+            />
+          </label>
+        </section>
+
+        <section className="editor-block">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Professional information</span>
+              <h2>Your direction</h2>
+            </div>
+          </div>
+          <label>
+            Professional headline
+            <input
+              maxLength="160"
+              value={profile.headline || ""}
+              onChange={(e) => update("headline", e.target.value)}
+              placeholder="e.g. Product designer building accessible tools"
+            />
+          </label>
+          <label>
+            About me / career objective
+            <textarea
+              rows="5"
+              maxLength="3000"
+              value={profile.summary || ""}
+              onChange={(e) => update("summary", e.target.value)}
+            />
+          </label>
+          <div className="form-grid">
+            <label>
+              Current job title (optional)
+              <input
+                maxLength="120"
+                value={profile.current_job_title || ""}
+                onChange={(e) => update("current_job_title", e.target.value)}
+              />
+            </label>
+            <label>
+              Total experience (optional)
+              <input
+                maxLength="40"
+                value={profile.total_experience || ""}
+                onChange={(e) => update("total_experience", e.target.value)}
+                placeholder="e.g. 3 years"
+              />
+            </label>
+            <label>
+              Employment status
+              <select
+                value={profile.employment_status || ""}
+                onChange={(e) => update("employment_status", e.target.value)}
+              >
+                <option value="">Choose status</option>
+                <option>Employed</option>
+                <option>Unemployed</option>
+                <option>Freelance</option>
+                <option>Student</option>
+                <option>Open to work</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section className="editor-block">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Skills</span>
+              <h2>Your strengths</h2>
+            </div>
+          </div>
+          <div className="chip-list">
+            {(profile.skills || []).map((rawSkill, idx) => {
+              const skill = normalizeSkill(rawSkill);
+              if (!skill) return null;
+              return (
+                <button
+                  type="button"
+                  className="skill-chip"
+                  key={`${skill}-${idx}`}
+                  onClick={() =>
+                    update(
+                      "skills",
+                      (profile.skills || []).filter((_, i) => i !== idx)
+                    )
+                  }
+                >
+                  {skill} <span aria-label={`Remove ${skill}`}>×</span>
+                </button>
+              );
+            })}
+          </div>
+          <input
+            value={skillsInput}
+            maxLength="80"
+            onChange={(e) => setSkillsInput(e.target.value)}
+            onKeyDown={addSkill}
+            placeholder="Type a skill and press Enter"
+          />
+          <small className="muted">Select a skill tag to remove it.</small>
+        </section>
+
+        <section className="editor-block">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Education</span>
+              <h2>Learning journey</h2>
+            </div>
+            <button
+              type="button"
+              className="secondary-button small-action"
+              onClick={() => addList("education", blankEducation)}
+            >
+              + Add education
+            </button>
+          </div>
+          {(profile.education || []).map((entry, index) => (
+            <div className="repeat-card" key={entry.id || index}>
+              <div className="form-grid">
+                <label>
+                  Degree
+                  <input
+                    required
+                    maxLength="120"
+                    value={entry.degree || entry.qualification || ""}
+                    onChange={(e) => updateList("education", index, "degree", e.target.value)}
+                  />
+                </label>
+                <label>
+                  Institution
+                  <input
+                    required
+                    maxLength="160"
+                    value={entry.institution || entry.college || ""}
+                    onChange={(e) => updateList("education", index, "institution", e.target.value)}
+                  />
+                </label>
+                <label>
+                  Field of study
+                  <input
+                    maxLength="120"
+                    value={entry.field_of_study || ""}
+                    onChange={(e) => updateList("education", index, "field_of_study", e.target.value)}
+                  />
+                </label>
+                <label>
+                  Start year
+                  <input
+                    type="number"
+                    min="1950"
+                    max="2100"
+                    value={entry.start_year ?? ""}
+                    onChange={(e) =>
+                      updateList(
+                        "education",
+                        index,
+                        "start_year",
+                        e.target.value ? Number(e.target.value) : null
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  End year
+                  <input
+                    type="number"
+                    min="1950"
+                    max="2100"
+                    disabled={entry.currently_studying}
+                    value={entry.end_year ?? entry.graduation_year ?? ""}
+                    onChange={(e) =>
+                      updateList(
+                        "education",
+                        index,
+                        "end_year",
+                        e.target.value ? Number(e.target.value) : null
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  Grade / CGPA (optional)
+                  <input
+                    maxLength="40"
+                    value={entry.score || ""}
+                    onChange={(e) => updateList("education", index, "score", e.target.value)}
+                  />
+                </label>
+              </div>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={Boolean(entry.currently_studying)}
+                  onChange={(e) =>
+                    updateList("education", index, "currently_studying", e.target.checked)
+                  }
+                />{" "}
+                Currently studying
+              </label>
+              <button
+                type="button"
+                className="text-button danger-text"
+                onClick={() =>
+                  setPendingDelete({ key: "education", index, label: "education record" })
+                }
+              >
+                Remove education
+              </button>
+            </div>
+          ))}
+          {!profile.education?.length && <p className="muted">No education added yet.</p>}
+        </section>
+
+        <section className="editor-block">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Work experience</span>
+              <h2>Where you’ve worked</h2>
+            </div>
+            <button
+              type="button"
+              className="secondary-button small-action"
+              onClick={() => addList("experience", blankExperience)}
+            >
+              + Add experience
+            </button>
+          </div>
+          {(profile.experience || []).map((entry, index) => (
+            <div className="repeat-card" key={entry.id || index}>
+              <div className="form-grid">
+                <label>
+                  Job title
+                  <input
+                    required
+                    maxLength="120"
+                    value={entry.job_title || ""}
+                    onChange={(e) => updateList("experience", index, "job_title", e.target.value)}
+                  />
+                </label>
+                <label>
+                  Company
+                  <input
+                    required
+                    maxLength="160"
+                    value={entry.company || entry.company_name || ""}
+                    onChange={(e) => updateList("experience", index, "company", e.target.value)}
+                  />
+                </label>
+                <label>
+                  Employment type
+                  <select
+                    value={entry.employment_type || "Full-time"}
+                    onChange={(e) =>
+                      updateList("experience", index, "employment_type", e.target.value)
+                    }
+                  >
+                    <option>Full-time</option>
+                    <option>Part-time</option>
+                    <option>Contract</option>
+                    <option>Internship</option>
+                    <option>Freelance</option>
+                  </select>
+                </label>
+                <label>
+                  Location
+                  <input
+                    maxLength="120"
+                    value={entry.location || ""}
+                    onChange={(e) => updateList("experience", index, "location", e.target.value)}
+                  />
+                </label>
+                <label>
+                  Start date
+                  <input
+                    required
+                    type="date"
+                    value={entry.start_date || ""}
+                    onChange={(e) => updateList("experience", index, "start_date", e.target.value)}
+                  />
+                </label>
+                <label>
+                  End date
+                  <input
+                    type="date"
+                    disabled={entry.currently_working}
+                    value={entry.end_date || ""}
+                    onChange={(e) => updateList("experience", index, "end_date", e.target.value)}
+                  />
+                </label>
+              </div>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={Boolean(entry.currently_working)}
+                  onChange={(e) =>
+                    updateList("experience", index, "currently_working", e.target.checked)
+                  }
+                />{" "}
+                Currently working here
+              </label>
+              <label>
+                Description
+                <textarea
+                  rows="3"
+                  maxLength="3000"
+                  value={entry.description || ""}
+                  onChange={(e) => updateList("experience", index, "description", e.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="text-button danger-text"
+                onClick={() =>
+                  setPendingDelete({ key: "experience", index, label: "work experience record" })
+                }
+              >
+                Remove experience
+              </button>
+            </div>
+          ))}
+          {!profile.experience?.length && <p className="muted">No work experience added yet.</p>}
+        </section>
+
+        <section className="editor-block">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Projects</span>
+              <h2>Work you can show</h2>
+            </div>
+            <button
+              type="button"
+              className="secondary-button small-action"
+              onClick={() => addList("projects", blankProject)}
+            >
+              + Add project
+            </button>
+          </div>
+          {(profile.projects || []).map((entry, index) => (
+            <div className="repeat-card" key={entry.id || index}>
+              <label>
+                Project name
+                <input
+                  required
+                  maxLength="140"
+                  value={entry.name || entry.project_name || ""}
+                  onChange={(e) => updateList("projects", index, "name", e.target.value)}
+                />
+              </label>
+              <label>
+                Description
+                <textarea
+                  rows="3"
+                  maxLength="3000"
+                  value={entry.description || ""}
+                  onChange={(e) => updateList("projects", index, "description", e.target.value)}
+                />
+              </label>
+              <label>
+                Technologies
+                <input
+                  placeholder="Add a technology, press Enter"
+                  onKeyDown={(e) => addProjectTechnology(index, e)}
+                />
+              </label>
+              <div className="chip-list">
+                {(entry.technologies || []).map((rawTech, techIdx) => {
+                  const tech = normalizeSkill(rawTech);
+                  if (!tech) return null;
+                  return (
+                    <button
+                      type="button"
+                      className="skill-chip"
+                      key={`${tech}-${techIdx}`}
+                      onClick={() =>
+                        updateList(
+                          "projects",
+                          index,
+                          "technologies",
+                          (entry.technologies || []).filter((_, i) => i !== techIdx)
+                        )
+                      }
+                    >
+                      {tech} ×
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="form-grid">
+                <label>
+                  Project link
+                  <input
+                    type="url"
+                    placeholder="https://…"
+                    value={entry.project_link || ""}
+                    onChange={(e) => updateList("projects", index, "project_link", e.target.value)}
+                  />
+                </label>
+                <label>
+                  GitHub link
+                  <input
+                    type="url"
+                    placeholder="https://github.com/…"
+                    value={entry.github_link || ""}
+                    onChange={(e) => updateList("projects", index, "github_link", e.target.value)}
+                  />
+                </label>
+              </div>
+              <button
+                type="button"
+                className="text-button danger-text"
+                onClick={() =>
+                  setPendingDelete({ key: "projects", index, label: "project" })
+                }
+              >
+                Remove project
+              </button>
+            </div>
+          ))}
+          {!profile.projects?.length && <p className="muted">No projects added yet.</p>}
+        </section>
+
+        <section className="editor-block">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Social and portfolio links</span>
+              <h2>Find you online</h2>
+            </div>
+          </div>
+          <div className="form-grid">
+            <label>
+              LinkedIn
+              <input
+                type="url"
+                placeholder="https://linkedin.com/in/…"
+                value={profile.linkedin || ""}
+                onChange={(e) => update("linkedin", e.target.value)}
+              />
+            </label>
+            <label>
+              GitHub
+              <input
+                type="url"
+                placeholder="https://github.com/…"
+                value={profile.github || ""}
+                onChange={(e) => update("github", e.target.value)}
+              />
+            </label>
+            <label>
+              Portfolio website
+              <input
+                type="url"
+                placeholder="https://…"
+                value={profile.portfolio || ""}
+                onChange={(e) => update("portfolio", e.target.value)}
+              />
+            </label>
+          </div>
+        </section>
+
+        <StatusMessage>{error}</StatusMessage>
+        <StatusMessage tone="success">{message}</StatusMessage>
+        <button className="primary-button" disabled={saving}>
+          {saving ? "Saving…" : "Save profile →"}
+        </button>
+      </form>
+
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title="Remove this item?"
+        message={`This ${pendingDelete?.label || "item"} will be removed from the form. Save your profile to make the change permanent.`}
+        confirmLabel="Remove"
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={removeList}
+      />
+    </section>
+  );
 }
 
 export default Profile;
